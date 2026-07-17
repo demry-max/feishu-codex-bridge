@@ -6,12 +6,14 @@
 
 ## 步骤 0：安装/更新 Claude Code CLI 并登录
 
+先把 claude CLI 装到/更新到最新版：
+
 ```bash
-npm install -g @anthropic-ai/claude-code   # 安装或更新到最新版
+npm install -g @anthropic-ai/claude-code
 claude --version
 ```
 
-然后运行 `claude /login`——会弹出登录选项，**让用户在浏览器完成授权**（订阅账号登录，之后机器人用的就是这个登录态）。已登录过的机器可跳过登录，后续步骤 8 会验证。
+然后**必须执行**登录引导：运行 `claude /login`，终端会自动弹出登录链接/二维码——**把登录链接原样呈现给用户，让用户在浏览器完成授权**（用 Claude 订阅账号登录，机器人之后就用这个登录态，不消耗 API Key）。用户确认登录完成后再继续下一步；若机器此前已登录，向用户确认是否沿用当前账号即可。
 
 ## 步骤 1：初始化项目
 
