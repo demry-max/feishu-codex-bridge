@@ -40,6 +40,8 @@ npm start
 
 Set `FEISHU_DOMAIN=lark` in `.env` before registration for international Lark.
 
+Set `CODEX_REASONING_EFFORT=xhigh` for Extra high reasoning and `CODEX_SERVICE_TIER=fast` for Codex Fast mode. Fast mode uses more credits.
+
 ## Security
 
 Only the owner is allowed by default. Setting `ALLOW_NON_OWNER=true` opts into access for other users with Codex's `read-only` sandbox. A read-only sandbox prevents writes; it should not be treated as complete file-visibility isolation. Use a dedicated workspace without sensitive files.

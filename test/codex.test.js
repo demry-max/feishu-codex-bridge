@@ -40,3 +40,25 @@ test('detects direct model identity questions', () => {
   assert.equal(isModelQuery('你现在用的是什么模型？'), true);
   assert.equal(isModelQuery('what model should I use?'), false);
 });
+
+test('applies explicit reasoning effort and fast service tier before resume', () => {
+  const args = buildCodexArgs('thread-123', true, [], {
+    model: 'gpt-5.6-sol',
+    reasoningEffort: 'xhigh',
+    serviceTier: 'fast',
+  });
+  assert.deepEqual(args.slice(0, 12), [
+    'exec',
+    '--sandbox',
+    'workspace-write',
+    '--config',
+    'model_reasoning_effort="xhigh"',
+    '--config',
+    'service_tier="fast"',
+    '--config',
+    'features.fast_mode=true',
+    'resume',
+    '--json',
+    '--skip-git-repo-check',
+  ]);
+});
