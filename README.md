@@ -36,6 +36,8 @@ npm start
 
 `npm run register` 会显示飞书授权二维码，扫码后自动创建应用，并将凭据写入被 Git 忽略的 `.env`。日志出现 `[ws] ws client ready` 后，到飞书私聊机器人发送“你好”即可。
 
+遇到续聊失败、后台服务未更新等问题，请查看 [故障排查](docs/TROUBLESHOOTING.md)。
+
 ## 可选配置
 
 ```dotenv

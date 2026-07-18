@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/demry-max/feishu-codex-bridge/main/
 
 The installer checks your Codex login, clones the project, installs dependencies, guides you through Feishu QR registration, and installs a user-level background service.
 
+For resume errors and service-update instructions, see [Troubleshooting](docs/TROUBLESHOOTING.md).
+
 Manual setup:
 
 ```bash
