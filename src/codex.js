@@ -35,10 +35,31 @@ export function sessionInfo(chatId, isOwner = false) {
   return [
     '**会话状态**',
     `- Codex thread: ${sid ? `\`${sid}\`` : '（无，下一条消息将新建）'}`,
+    `- 配置模型: ${CODEX_MODEL ? `\`${CODEX_MODEL}\`` : 'Codex CLI 默认模型（未显式指定）'}`,
     `- 工作目录: \`${WORKSPACE_DIR}\``,
     `- 你的身份: ${isOwner ? 'owner' : '普通成员'}`,
     `- 沙箱权限: ${isOwner ? 'workspace-write' : 'read-only'}`,
   ].join('\n');
+}
+
+export function isModelQuery(text) {
+  const normalized = String(text)
+    .trim()
+    .toLowerCase()
+    .replace(/[?？。！!]+$/g, '')
+    .replace(/\s+/g, ' ');
+  return (
+    normalized === '/model' ||
+    /^(what|which) model (are you using|do you use)$/.test(normalized) ||
+    /^(你)?(现在|当前)?(在)?(用|使用)(的)?(是)?(什么|哪个)模型$/.test(normalized) ||
+    /^(现在|当前)?(是)?(什么|哪个)模型$/.test(normalized)
+  );
+}
+
+export function modelInfo() {
+  return CODEX_MODEL
+    ? `**当前模型**：\`${CODEX_MODEL}\`\n\n该值由桥接服务的 \`CODEX_MODEL\` 配置传入 Codex CLI。`
+    : '**当前模型**：Codex CLI 默认模型（未设置 `CODEX_MODEL`）。';
 }
 
 export function parseJsonl(stdout) {

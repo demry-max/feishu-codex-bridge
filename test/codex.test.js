@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCodexArgs, parseJsonl } from '../src/codex.js';
+import { buildCodexArgs, isModelQuery, parseJsonl } from '../src/codex.js';
 
 test('parses Codex JSONL thread id and last agent message', () => {
   const output = [
@@ -32,4 +32,11 @@ test('places exec-level sandbox before resume', () => {
     'thread-123',
     '-',
   ]);
+});
+
+test('detects direct model identity questions', () => {
+  assert.equal(isModelQuery('/model'), true);
+  assert.equal(isModelQuery('what model are you using?'), true);
+  assert.equal(isModelQuery('你现在用的是什么模型？'), true);
+  assert.equal(isModelQuery('what model should I use?'), false);
 });

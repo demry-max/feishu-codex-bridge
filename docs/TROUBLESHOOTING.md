@@ -1,5 +1,13 @@
 # 故障排查 / Troubleshooting
 
+## 机器人回答的模型名称不准确
+
+模型本身不一定知道桥接层传入 Codex CLI 的精确模型 ID，因此让模型自我介绍可能得到错误答案。发送 `/model` 或“what model are you using?”时，桥接现在会直接返回 `CODEX_MODEL` 的实际配置，不再让模型猜测。`/status` 也会显示该值。
+
+## Incorrect model name in the bot's answer
+
+The model may not know the exact model ID supplied by the bridge to Codex CLI. Use `/model`; the bridge returns the configured `CODEX_MODEL` directly. `/status` includes the same value.
+
 ## 续聊时报 `unexpected argument '--sandbox' found`
 
 症状：机器人首条消息能正常回复，但第二条消息或已有会话会返回：
