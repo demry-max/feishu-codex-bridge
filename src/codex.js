@@ -11,6 +11,8 @@ export const WORKSPACE_DIR =
   process.env.WORKSPACE_DIR || path.resolve(__dirname, '..', 'workspace');
 const CODEX_TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || 300_000);
 const CODEX_MODEL = process.env.CODEX_MODEL || '';
+const CODEX_REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || '';
+const CODEX_SERVICE_TIER = process.env.CODEX_SERVICE_TIER || '';
 
 const sessions = loadSessions(); // { [chatId]: threadId }
 
@@ -36,6 +38,8 @@ export function sessionInfo(chatId, isOwner = false) {
     '**会话状态**',
     `- Codex thread: ${sid ? `\`${sid}\`` : '（无，下一条消息将新建）'}`,
     `- 配置模型: ${CODEX_MODEL ? `\`${CODEX_MODEL}\`` : 'Codex CLI 默认模型（未显式指定）'}`,
+    `- 推理强度: ${CODEX_REASONING_EFFORT ? `\`${CODEX_REASONING_EFFORT}\`` : 'Codex CLI 默认值'}`,
+    `- 服务速度: ${CODEX_SERVICE_TIER ? `\`${CODEX_SERVICE_TIER}\`` : 'Codex CLI 默认值'}`,
     `- 工作目录: \`${WORKSPACE_DIR}\``,
     `- 你的身份: ${isOwner ? 'owner' : '普通成员'}`,
     `- 沙箱权限: ${isOwner ? 'workspace-write' : 'read-only'}`,
@@ -82,12 +86,22 @@ export function parseJsonl(stdout) {
   return { threadId, answer, error };
 }
 
-export function buildCodexArgs(sid, isOwner = false, attachments = []) {
+export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime = {}) {
+  const model = runtime.model ?? CODEX_MODEL;
+  const reasoningEffort = runtime.reasoningEffort ?? CODEX_REASONING_EFFORT;
+  const serviceTier = runtime.serviceTier ?? CODEX_SERVICE_TIER;
   // --sandbox 属于 `codex exec` 而不是 `codex exec resume`，必须放在 resume 之前。
   const args = ['exec', '--sandbox', isOwner ? 'workspace-write' : 'read-only'];
+  if (reasoningEffort) {
+    args.push('--config', `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+  }
+  if (serviceTier) {
+    args.push('--config', `service_tier=${JSON.stringify(serviceTier)}`);
+    if (serviceTier === 'fast') args.push('--config', 'features.fast_mode=true');
+  }
   if (sid) args.push('resume');
   args.push('--json', '--skip-git-repo-check');
-  if (CODEX_MODEL) args.push('--model', CODEX_MODEL);
+  if (model) args.push('--model', model);
   for (const file of attachments) {
     if (/\.(png|jpe?g|gif|webp)$/i.test(file)) args.push('--image', file);
   }
