@@ -2,7 +2,7 @@
 $vbs = Join-Path $PSScriptRoot 'start-hidden.vbs'
 $startup = [IO.Path]::Combine($env:APPDATA, 'Microsoft\Windows\Start Menu\Programs\Startup')
 $ws = New-Object -ComObject WScript.Shell
-$lnk = $ws.CreateShortcut((Join-Path $startup 'feishu-claude-bridge.lnk'))
+$lnk = $ws.CreateShortcut((Join-Path $startup 'feishu-codex-bridge.lnk'))
 $lnk.TargetPath = 'wscript.exe'
 $lnk.Arguments = '"' + $vbs + '"'
 $lnk.WorkingDirectory = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)

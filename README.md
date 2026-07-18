@@ -1,83 +1,82 @@
-# feishu-claude-bridge
+# feishu-codex-bridge
 
-**中文** | [English](README.en.md)
+[English](README.en.md) | **中文**
 
-**把 Claude Code 接进飞书** —— 私聊或群里 @机器人，让 Claude 回答问题、看图片、读文件、听语音，并保持上下文连续。无需公网服务器、域名、回调地址：飞书事件走长连接（WebSocket），跑在一台装有 Claude Code 的电脑上即可。
+把本机 Codex CLI 接入飞书：私聊或在群里 @机器人即可与 Codex 对话。飞书事件通过 WebSocket 长连接到达，无需公网服务器、域名或回调地址。
 
-**Chat with Claude Code from Feishu/Lark** — DM the bot or @mention it in groups. Handles text, images, files, voice messages, and rich posts with persistent per-chat sessions. No public server needed: events arrive over Feishu's persistent WebSocket connection, so it runs on any machine with Claude Code installed.
+## 功能
 
-姊妹项目：[lark-claude-bridge](https://github.com/demry-max/lark-claude-bridge)（Lark 国际版，英文文档）· [dingtalk-claude-bridge](https://github.com/demry-max/dingtalk-claude-bridge)（钉钉版，免公网）· [wecom-claude-bridge](https://github.com/demry-max/wecom-claude-bridge)（企业微信版）
+- 每个飞书会话映射一个 Codex thread，支持跨天续聊
+- 支持文本、图片、文件、语音、富文本和合并转发
+- 首个私聊者自动成为 owner：owner 使用 `workspace-write`，其他成员使用 `read-only`
+- `/new` 重开会话，`/status` 查看 thread 和权限
+- 直接使用本机 Codex 登录态，不需要额外 API Key
 
-## 特性 Features
+## 安装
 
-- 🔌 **零公网依赖**：长连接收事件，家用电脑即可部署
-- 📲 **扫码即建应用**：`npm run register` 走飞书官方应用注册接口，扫一次码自动创建应用、写入凭据、登记 owner
-- 🧠 **会话记忆**：每个飞书会话映射一个 Claude session（`--resume` 续聊），跨天跨周有效；`/new` 重开，`/status` 查看
-- 🗂️ **Agent 工作区**：workspace 内置 CLAUDE.md 人格 + `memory/` 长期记忆（说「记住…」自动落盘、跨会话生效）+ `skills/` 技能沉淀（说「存成技能」自动生成 SKILL.md 并在后续会话自动加载）
-- 🖼️ **多消息类型**：文本 / 图片（Claude 直接看图）/ 文件 / 语音（飞书转写字段 → ffmpeg + 语音识别 API 兜底）/ 富文本 / 合并转发 / 分享卡片
-- 🔐 **权限分级**：首个私聊者自动成为 owner（本机只读工具 + 联网）；其他成员仅联网检索，碰不到主机文件
-- 💰 **用订阅不用 API Key**：通过 `claude -p` 无头模式调用本机 Claude Code 登录态
-- 🖥️ **macOS + Windows**：launchd / 启动项自启脚本齐备（Linux systemd 同理）
-
-## 🗂️ Agent 工作区（Hermes 式记忆与技能）
-
-机器人不只是问答机——`workspace/` 是它的常驻工作区，自带长期记忆与技能沉淀：
-
-```
-workspace/
-├── CLAUDE.md          # 人格与行为协议（每次调用自动加载）
-├── memory/            # 长期记忆：一条记忆 = 一个 md 文件
-│   └── MEMORY.md      # 记忆索引，经 @import 每次对话自动注入
-└── skills/            # 沉淀的技能，桥接自动同步到 .claude/skills 生效
-```
-
-- 对它说「**记住**：下周三去马尼拉出差」→ 自动写入 `memory/` 并更新索引，**跨会话、跨聊天窗口**持续生效（新会话即时可见，进行中的老会话 `/new` 后加载）
-- 教它一个流程后说「**存成技能**」→ 自动生成 `skills/<name>/SKILL.md`，之后所有会话自动加载、匹配场景自动遵循
-- 问「**你会哪些技能**」→ 随时盘点技能清单
-- 安全边界：写权限**仅限** `memory/` 与 `skills/` 两个目录（Claude Code 本身禁止 agent 自写 `.claude` 配置目录，技能由桥接代码复制同步），且协议明确禁止把密码/密钥写入记忆
-
-
-## 快速开始 Quick Start
+需要 Git、Node.js 18+ 和 Codex CLI。macOS / Linux 一键安装：
 
 ```bash
-npm install -g @anthropic-ai/claude-code   # 安装/更新 Claude Code CLI
-claude /login                              # 弹出登录选项，浏览器完成授权
+curl -fsSL https://raw.githubusercontent.com/demry-max/feishu-codex-bridge/main/install.sh | bash
+```
 
-git clone https://github.com/demry-max/feishu-claude-bridge.git
-cd feishu-claude-bridge
+脚本会检查 Codex 登录、下载项目、安装依赖、引导飞书扫码建应用，并配置开机自启。
+
+如需手动安装：
+
+```bash
+npm install -g @openai/codex
+codex login
+git clone https://github.com/demry-max/feishu-codex-bridge.git
+cd feishu-codex-bridge
 npm install
-npm run register   # 飞书 App 扫码 → 应用自动创建，凭据自动写入 .env
-npm start          # 日志出现 [ws] ws client ready 即成功
+npm run register
+npm start
 ```
 
-然后在飞书里私聊机器人发「你好」。前置条件：Node ≥ 18；可选 ffmpeg（语音兜底转写）。
+`npm run register` 会显示飞书授权二维码，扫码后自动创建应用，并将凭据写入被 Git 忽略的 `.env`。日志出现 `[ws] ws client ready` 后，到飞书私聊机器人发送“你好”即可。
 
-- 开机自启（macOS）：参考 [examples/launchd.example.plist](examples/launchd.example.plist)
-- 开机自启（Windows）：`powershell -ExecutionPolicy Bypass -File scripts\windows\install-startup.ps1`
-- 完整部署手册（可直接丢给 Claude Code 执行）：[docs/飞书-Claude-机器人架设方案.md](docs/飞书-Claude-机器人架设方案.md)
-- 扫码注册失败时的手动配置：见手册附录 A
+## 可选配置
 
-## 架构 Architecture
-
+```dotenv
+CODEX_BIN=codex
+CODEX_MODEL=
+CODEX_TIMEOUT_MS=300000
+WORKSPACE_DIR=/absolute/path/to/workspace
+FEISHU_DOMAIN=feishu
+ALLOW_NON_OWNER=false
 ```
+
+`FEISHU_DOMAIN=lark` 可切换到 Lark 国际版。语音识别兜底需要 `ffmpeg` 以及飞书 `speech_to_text:speech` 权限。
+
+## 架构
+
+```text
 飞书私聊 / 群聊 @机器人
-        │  长连接（WebSocket，im.message.receive_v1）
-        ▼
-桥接服务（Node.js 常驻：去重、串行队列、owner 鉴权、消息解析）
-        │  spawn: claude -p --resume <会话ID> --allowedTools …（提示词走 stdin）
-        ▼
-Claude Code CLI（无头模式）
-        │
-        ▼
-Markdown 卡片回复（失败自动降级纯文本）+ 表情回执
+        ↓ WebSocket
+Node.js 桥接服务（去重、串行队列、owner 鉴权、附件下载）
+        ↓ codex exec --json / codex exec resume
+Codex CLI
+        ↓
+飞书 Markdown 卡片
 ```
 
-## 安全 Security
+## 安全
 
-- `.env`（App Secret）与运行数据均被 `.gitignore` 排除
-- 非 owner 无任何本机文件访问权限；附件目录仅只读放行
-- 默认只授予 Claude 只读工具；请勿给无人值守机器人开 Write/Bash
+- `.env`、`data/` 和运行时 workspace 内容均被 Git 忽略
+- 默认只允许 owner 使用机器人；可用 `ALLOW_NON_OWNER=true` 显式开放
+- 开放后，非 owner 进程使用 `read-only` 沙箱，但这不代表主机上的所有文件都不可见
+- owner 使用 `workspace-write`；建议为机器人使用独立 workspace，不要指向含敏感数据的目录
 
-## License
+## 记忆与 Skills
 
-[MIT](LICENSE)
+- `workspace/memory/MEMORY.md` 是长期记忆索引
+- 对机器人说“记住……”，Codex 会在 `workspace/memory/` 添加记忆
+- 说“存成技能”，技能会保存到 `workspace/skills/`
+- 桥接会在每次调用前同步技能到 `workspace/.agents/skills/`
+
+## 致谢
+
+本项目基于 [demry-max/feishu-claude-bridge](https://github.com/demry-max/feishu-claude-bridge) 的飞书长连接、消息解析和扫码注册设计改造，并将 Agent 运行时替换为 Codex CLI。
+
+MIT License

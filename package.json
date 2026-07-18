@@ -1,16 +1,16 @@
 {
-  "name": "feishu-claude-bridge",
+  "name": "feishu-codex-bridge",
   "version": "1.0.0",
-  "description": "",
+  "description": "Chat with Codex from Feishu/Lark over a persistent WebSocket connection",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "start": "node src/index.js",
     "register": "node scripts/register.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.71.1",

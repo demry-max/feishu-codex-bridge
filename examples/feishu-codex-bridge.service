@@ -1,0 +1,14 @@
+[Unit]
+Description=Feishu Codex Bridge
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__WORKDIR__
+Environment=CODEX_BIN=__CODEX_BIN__
+ExecStart=__NODE_BIN__ src/index.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

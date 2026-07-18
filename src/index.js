@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import * as lark from '@larksuiteoapi/node-sdk';
-import { runClaude, resetSession, sessionInfo, WORKSPACE_DIR } from './claude.js';
+import { runCodex, resetSession, sessionInfo, WORKSPACE_DIR } from './codex.js';
 import { buildPrompt } from './messages.js';
 import { loadOwner, saveOwner } from './store.js';
 
 const APP_ID = process.env.FEISHU_APP_ID;
 const APP_SECRET = process.env.FEISHU_APP_SECRET;
+const ALLOW_NON_OWNER = /^(1|true|yes)$/i.test(process.env.ALLOW_NON_OWNER || 'false');
 
 if (!APP_ID || !APP_SECRET) {
   console.error('缺少 FEISHU_APP_ID / FEISHU_APP_SECRET，请检查 .env');
@@ -125,6 +126,10 @@ async function handleMessage(data) {
     return;
   }
   const isOwner = senderOpenId === owner;
+  if (!isOwner && !ALLOW_NON_OWNER) {
+    await reply(message.message_id, '⛔ 该机器人默认仅限 owner 使用。');
+    return;
+  }
 
   // ---- 消息 → 提示词（文本/图片/文件/富文本/合并转发/卡片） ----
   let built;
@@ -148,7 +153,7 @@ async function handleMessage(data) {
   // ---- 内置命令 ----
   if (text === '/new') {
     resetSession(message.chat_id);
-    await reply(message.message_id, '🆕 已重置，下一条消息将开启全新 Claude 会话。');
+    await reply(message.message_id, '🆕 已重置，下一条消息将开启全新 Codex 会话。');
     return;
   }
   if (text === '/status') {
@@ -156,26 +161,23 @@ async function handleMessage(data) {
     return;
   }
 
-  // 附件存放于 workspace/incoming/，即使非 owner 也放行该目录的只读访问
-  const extraTools = built.attachments.length ? ['Read(./incoming/**)'] : [];
-
   enqueue(message.chat_id, async () => {
     console.log(`[msg] ${isOwner ? 'owner' : senderOpenId} @ ${message.chat_type} [${message.message_type}]: ${text.slice(0, 80)}`);
     await react(message.message_id, 'OnIt');
     try {
-      const answer = await runClaude(message.chat_id, text, isOwner, extraTools);
-      await reply(message.message_id, answer || '（Claude 返回了空回复）');
+      const answer = await runCodex(message.chat_id, text, isOwner, built.attachments);
+      await reply(message.message_id, answer || '（Codex 返回了空回复）');
       await react(message.message_id, 'DONE');
     } catch (e) {
-      console.error('[claude]', e);
+      console.error('[codex]', e);
       const msg = String(e.message ?? e);
       if (msg.includes('401') || /re-?authenticate/i.test(msg)) {
         await reply(
           message.message_id,
-          '⚠️ Mac 上的 Claude 登录已过期。请在 Mac 终端运行 `claude /login` 重新登录后再试。'
+          '⚠️ Mac 上的 Codex 登录已过期。请在 Mac 终端运行 `codex login` 重新登录后再试。'
         );
       } else {
-        await reply(message.message_id, `⚠️ Claude 调用失败：${msg}`);
+        await reply(message.message_id, `⚠️ Codex 调用失败：${msg}`);
       }
     }
   });

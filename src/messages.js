@@ -78,8 +78,8 @@ function walkPost(content) {
 }
 
 /**
- * 把一条飞书消息转成给 Claude 的提示词。
- * 返回 { prompt, attachments }；attachments 非空时需要给 Claude 开 Read(./incoming/**) 权限。
+ * 把一条飞书消息转成给 Codex 的提示词。
+ * 返回 { prompt, attachments }；图片附件会通过 Codex CLI --image 传入。
  */
 export async function buildPrompt(client, message, workspaceDir) {
   const type = message.message_type;
@@ -185,7 +185,7 @@ export async function buildPrompt(client, message, workspaceDir) {
       return { prompt: null, attachments: [], unsupported: `暂不支持${type === 'media' ? '视频' : '表情包'}消息。` };
 
     default:
-      // 分享卡片/邮件卡片等：把原始 JSON 交给 Claude 理解
+      // 分享卡片/邮件卡片等：把原始 JSON 交给 Codex 理解
       return {
         prompt: `用户发来一条「${type}」类型的飞书消息，原始内容 JSON 如下：\n\`\`\`json\n${String(
           message.content
