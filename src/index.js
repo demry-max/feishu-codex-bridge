@@ -1,6 +1,13 @@
 import 'dotenv/config';
 import * as lark from '@larksuiteoapi/node-sdk';
-import { runCodex, resetSession, sessionInfo, WORKSPACE_DIR } from './codex.js';
+import {
+  isModelQuery,
+  modelInfo,
+  runCodex,
+  resetSession,
+  sessionInfo,
+  WORKSPACE_DIR,
+} from './codex.js';
 import { buildPrompt } from './messages.js';
 import { loadOwner, saveOwner } from './store.js';
 
@@ -158,6 +165,10 @@ async function handleMessage(data) {
   }
   if (text === '/status') {
     await reply(message.message_id, sessionInfo(message.chat_id, isOwner));
+    return;
+  }
+  if (isModelQuery(text)) {
+    await reply(message.message_id, modelInfo());
     return;
   }
 

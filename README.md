@@ -9,7 +9,7 @@
 - 每个飞书会话映射一个 Codex thread，支持跨天续聊
 - 支持文本、图片、文件、语音、富文本和合并转发
 - 首个私聊者自动成为 owner：owner 使用 `workspace-write`，其他成员使用 `read-only`
-- `/new` 重开会话，`/status` 查看 thread 和权限
+- `/new` 重开会话，`/status` 查看 thread、模型和权限，`/model` 查看桥接实际配置的模型
 - 直接使用本机 Codex 登录态，不需要额外 API Key
 
 ## 安装

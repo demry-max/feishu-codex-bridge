@@ -7,6 +7,7 @@ Chat with the local Codex CLI from Feishu or Lark. The bridge uses Feishu's pers
 ## Features
 
 - Persistent Codex thread per Feishu chat
+- Reliable `/model` reporting from the bridge configuration instead of model self-identification
 - Text, image, file, voice, rich-post, and merged-forward messages
 - QR-based Feishu app registration
 - Durable workspace memory and project-scoped Codex skills
