@@ -44,6 +44,8 @@ Set `CODEX_REASONING_EFFORT=xhigh` for Extra high reasoning and `CODEX_SERVICE_T
 
 Long-running active tasks are not stopped merely because they exceed five minutes. `CODEX_IDLE_TIMEOUT_MS` resets whenever Codex produces output, while `CODEX_MAX_RUNTIME_MS` remains a final safety cap. The legacy `CODEX_TIMEOUT_MS` is still accepted as an idle-timeout fallback.
 
+`ENABLE_PROGRESS_UPDATES=true` streams Codex's intermediate status messages to Feishu during long tasks while keeping the final answer single-delivery.
+
 ## Security
 
 Only the owner is allowed by default. Setting `ALLOW_NON_OWNER=true` opts into access for other users with Codex's `read-only` sandbox. A read-only sandbox prevents writes; it should not be treated as complete file-visibility isolation. Use a dedicated workspace without sensitive files.

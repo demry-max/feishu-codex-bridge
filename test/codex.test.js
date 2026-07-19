@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildCodexArgs,
+  createJsonlProgressParser,
   isModelQuery,
   parseJsonl,
   resolveTimeouts,
@@ -78,4 +79,28 @@ test('uses an idle timeout with a separate hard runtime limit', () => {
     { idleTimeoutMs: 60_000, maxRuntimeMs: 900_000 }
   );
   assert.equal(resolveTimeouts({ CODEX_TIMEOUT_MS: '120000' }).idleTimeoutMs, 120_000);
+});
+
+test('streams intermediate agent messages but keeps the final answer pending', () => {
+  const progress = [];
+  const parser = createJsonlProgressParser((text) => progress.push(text));
+  parser.push('{"type":"item.completed","item":{"type":"agent_message","text":"正在查询"}}\n');
+  parser.push('{"type":"item.star');
+  parser.push('ted","item":{"type":"command_execution"}}\n');
+  parser.push('{"type":"item.completed","item":{"type":"agent_message","text":"完成"}}\n');
+  parser.push('{"type":"turn.completed"}\n');
+  parser.finish();
+  assert.deepEqual(progress, ['正在查询']);
+});
+
+test('streams an earlier agent message when a later agent message follows', () => {
+  const progress = [];
+  const parser = createJsonlProgressParser((text) => progress.push(text));
+  parser.push(
+    '{"type":"item.completed","item":{"type":"agent_message","text":"第一阶段"}}\n' +
+      '{"type":"item.completed","item":{"type":"agent_message","text":"最终答案"}}\n' +
+      '{"type":"turn.completed"}\n'
+  );
+  parser.finish();
+  assert.deepEqual(progress, ['第一阶段']);
 });

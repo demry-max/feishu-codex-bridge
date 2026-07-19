@@ -103,6 +103,60 @@ export function parseJsonl(stdout) {
   return { threadId, answer, error };
 }
 
+export function createJsonlProgressParser(onProgress) {
+  let buffer = '';
+  let pendingAgentMessage = '';
+
+  const emitPending = () => {
+    const text = pendingAgentMessage.trim();
+    pendingAgentMessage = '';
+    if (text) onProgress(text);
+  };
+
+  const processLine = (line) => {
+    if (!line.trim().startsWith('{')) return;
+    try {
+      const event = JSON.parse(line);
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+        // 新的 agent message 证明前一条不是最终答案。
+        emitPending();
+        pendingAgentMessage = event.item.text || '';
+        return;
+      }
+      if (event.type === 'turn.completed') {
+        // 紧贴 turn.completed 的 agent message 是最终答案，由调用方统一回复。
+        pendingAgentMessage = '';
+        return;
+      }
+      if (
+        pendingAgentMessage &&
+        (event.type === 'item.started' ||
+          (event.type === 'item.completed' && event.item?.type !== 'agent_message'))
+      ) {
+        // agent message 之后仍有工具活动，因此该消息是中间进度。
+        emitPending();
+      }
+    } catch {
+      // 忽略非 JSONL 日志。
+    }
+  };
+
+  return {
+    push(chunk) {
+      buffer += String(chunk);
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+      for (const line of lines) processLine(line);
+    },
+    finish() {
+      if (buffer) processLine(buffer);
+      buffer = '';
+      // 结束时未发送的最后一条保留给最终回复。
+      pendingAgentMessage = '';
+    },
+  };
+}
+
 export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime = {}) {
   const model = runtime.model ?? CODEX_MODEL;
   const reasoningEffort = runtime.reasoningEffort ?? CODEX_REASONING_EFFORT;
@@ -127,7 +181,13 @@ export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime =
   return args;
 }
 
-export function runCodex(chatId, prompt, isOwner = false, attachments = []) {
+export function runCodex(
+  chatId,
+  prompt,
+  isOwner = false,
+  attachments = [],
+  onProgress = null
+) {
   syncSkills();
   const sid = sessions[chatId];
   const args = buildCodexArgs(sid, isOwner, attachments);
@@ -137,6 +197,13 @@ export function runCodex(chatId, prompt, isOwner = false, attachments = []) {
     let stdout = '';
     let stderr = '';
     let settled = false;
+    let progressQueue = Promise.resolve();
+    const progressParser = createJsonlProgressParser((text) => {
+      if (!onProgress) return;
+      progressQueue = progressQueue
+        .then(() => onProgress(text))
+        .catch((error) => console.error('[progress-reply]', error?.message ?? error));
+    });
     const fail = (error) => {
       if (settled) return;
       settled = true;
@@ -164,6 +231,7 @@ export function runCodex(chatId, prompt, isOwner = false, attachments = []) {
 
     child.stdout.on('data', (d) => {
       stdout += d;
+      progressParser.push(d);
       armIdleTimer();
     });
     child.stderr.on('data', (d) => {
@@ -174,9 +242,11 @@ export function runCodex(chatId, prompt, isOwner = false, attachments = []) {
       clearTimers();
       fail(new Error(`Codex CLI 启动失败: ${e.message}`));
     });
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       clearTimers();
       if (settled) return;
+      progressParser.finish();
+      await progressQueue;
       const out = parseJsonl(stdout);
       if (out.threadId) {
         sessions[chatId] = out.threadId;

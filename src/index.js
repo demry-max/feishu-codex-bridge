@@ -14,6 +14,9 @@ import { loadOwner, saveOwner } from './store.js';
 const APP_ID = process.env.FEISHU_APP_ID;
 const APP_SECRET = process.env.FEISHU_APP_SECRET;
 const ALLOW_NON_OWNER = /^(1|true|yes)$/i.test(process.env.ALLOW_NON_OWNER || 'false');
+const ENABLE_PROGRESS_UPDATES = !/^(0|false|no)$/i.test(
+  process.env.ENABLE_PROGRESS_UPDATES || 'true'
+);
 
 if (!APP_ID || !APP_SECRET) {
   console.error('缺少 FEISHU_APP_ID / FEISHU_APP_SECRET，请检查 .env');
@@ -176,7 +179,15 @@ async function handleMessage(data) {
     console.log(`[msg] ${isOwner ? 'owner' : senderOpenId} @ ${message.chat_type} [${message.message_type}]: ${text.slice(0, 80)}`);
     await react(message.message_id, 'OnIt');
     try {
-      const answer = await runCodex(message.chat_id, text, isOwner, built.attachments);
+      const answer = await runCodex(
+        message.chat_id,
+        text,
+        isOwner,
+        built.attachments,
+        ENABLE_PROGRESS_UPDATES
+          ? (progress) => reply(message.message_id, `⏳ ${progress}`)
+          : null
+      );
       await reply(message.message_id, answer || '（Codex 返回了空回复）');
       await react(message.message_id, 'DONE');
     } catch (e) {
