@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCodexArgs, isModelQuery, parseJsonl } from '../src/codex.js';
+import {
+  buildCodexArgs,
+  isModelQuery,
+  parseJsonl,
+  resolveTimeouts,
+} from '../src/codex.js';
 
 test('parses Codex JSONL thread id and last agent message', () => {
   const output = [
@@ -61,4 +66,16 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     '--json',
     '--skip-git-repo-check',
   ]);
+});
+
+test('uses an idle timeout with a separate hard runtime limit', () => {
+  assert.deepEqual(resolveTimeouts({}), {
+    idleTimeoutMs: 300_000,
+    maxRuntimeMs: 1_800_000,
+  });
+  assert.deepEqual(
+    resolveTimeouts({ CODEX_IDLE_TIMEOUT_MS: '60000', CODEX_MAX_RUNTIME_MS: '900000' }),
+    { idleTimeoutMs: 60_000, maxRuntimeMs: 900_000 }
+  );
+  assert.equal(resolveTimeouts({ CODEX_TIMEOUT_MS: '120000' }).idleTimeoutMs, 120_000);
 });

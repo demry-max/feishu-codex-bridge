@@ -1,5 +1,18 @@
 # 故障排查 / Troubleshooting
 
+## 长任务在 300 秒后报超时
+
+旧版使用固定 300 秒总运行上限，创建飞书文档、扫描大量聊天记录等仍在正常执行的任务也会被误杀。新版改为 300 秒“无活动”超时：只要 Codex 持续产生输出，计时器就会重置。默认最长运行时间为 30 分钟。
+
+```dotenv
+CODEX_IDLE_TIMEOUT_MS=300000
+CODEX_MAX_RUNTIME_MS=1800000
+```
+
+## Long tasks time out after 300 seconds
+
+Older versions used a fixed five-minute total runtime limit. The current bridge resets the idle timer whenever Codex emits output and keeps a separate 30-minute hard safety limit. Configure these with `CODEX_IDLE_TIMEOUT_MS` and `CODEX_MAX_RUNTIME_MS`.
+
 ## 机器人回答的模型名称不准确
 
 模型本身不一定知道桥接层传入 Codex CLI 的精确模型 ID，因此让模型自我介绍可能得到错误答案。发送 `/model` 或“what model are you using?”时，桥接现在会直接返回 `CODEX_MODEL` 的实际配置，不再让模型猜测。`/status` 也会显示该值。

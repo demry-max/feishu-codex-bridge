@@ -9,7 +9,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CODEX_BIN = process.env.CODEX_BIN || 'codex';
 export const WORKSPACE_DIR =
   process.env.WORKSPACE_DIR || path.resolve(__dirname, '..', 'workspace');
-const CODEX_TIMEOUT_MS = Number(process.env.CODEX_TIMEOUT_MS || 300_000);
+export function resolveTimeouts(env = process.env) {
+  const positiveNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  return {
+    idleTimeoutMs: positiveNumber(
+      env.CODEX_IDLE_TIMEOUT_MS || env.CODEX_TIMEOUT_MS,
+      300_000
+    ),
+    maxRuntimeMs: positiveNumber(env.CODEX_MAX_RUNTIME_MS, 1_800_000),
+  };
+}
+
+const { idleTimeoutMs: CODEX_IDLE_TIMEOUT_MS, maxRuntimeMs: CODEX_MAX_RUNTIME_MS } =
+  resolveTimeouts();
 const CODEX_MODEL = process.env.CODEX_MODEL || '';
 const CODEX_REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || '';
 const CODEX_SERVICE_TIER = process.env.CODEX_SERVICE_TIER || '';
@@ -40,6 +55,8 @@ export function sessionInfo(chatId, isOwner = false) {
     `- 配置模型: ${CODEX_MODEL ? `\`${CODEX_MODEL}\`` : 'Codex CLI 默认模型（未显式指定）'}`,
     `- 推理强度: ${CODEX_REASONING_EFFORT ? `\`${CODEX_REASONING_EFFORT}\`` : 'Codex CLI 默认值'}`,
     `- 服务速度: ${CODEX_SERVICE_TIER ? `\`${CODEX_SERVICE_TIER}\`` : 'Codex CLI 默认值'}`,
+    `- 无活动超时: ${CODEX_IDLE_TIMEOUT_MS / 1000}s`,
+    `- 最长运行: ${CODEX_MAX_RUNTIME_MS / 1000}s`,
     `- 工作目录: \`${WORKSPACE_DIR}\``,
     `- 你的身份: ${isOwner ? 'owner' : '普通成员'}`,
     `- 沙箱权限: ${isOwner ? 'workspace-write' : 'read-only'}`,
@@ -125,19 +142,40 @@ export function runCodex(chatId, prompt, isOwner = false, attachments = []) {
       settled = true;
       reject(error);
     };
-    const timer = setTimeout(() => {
+    let idleTimer;
+    const clearTimers = () => {
+      clearTimeout(idleTimer);
+      clearTimeout(maxRuntimeTimer);
+    };
+    const armIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        clearTimers();
+        child.kill('SIGKILL');
+        fail(new Error(`Codex CLI 无活动超时（${CODEX_IDLE_TIMEOUT_MS / 1000}s）`));
+      }, CODEX_IDLE_TIMEOUT_MS);
+    };
+    const maxRuntimeTimer = setTimeout(() => {
+      clearTimers();
       child.kill('SIGKILL');
-      fail(new Error(`Codex CLI 超时（${CODEX_TIMEOUT_MS / 1000}s）`));
-    }, CODEX_TIMEOUT_MS);
+      fail(new Error(`Codex CLI 超过最长运行时间（${CODEX_MAX_RUNTIME_MS / 1000}s）`));
+    }, CODEX_MAX_RUNTIME_MS);
+    armIdleTimer();
 
-    child.stdout.on('data', (d) => (stdout += d));
-    child.stderr.on('data', (d) => (stderr += d));
+    child.stdout.on('data', (d) => {
+      stdout += d;
+      armIdleTimer();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d;
+      armIdleTimer();
+    });
     child.on('error', (e) => {
-      clearTimeout(timer);
+      clearTimers();
       fail(new Error(`Codex CLI 启动失败: ${e.message}`));
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      clearTimers();
       if (settled) return;
       const out = parseJsonl(stdout);
       if (out.threadId) {
