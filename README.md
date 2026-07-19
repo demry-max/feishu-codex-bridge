@@ -45,7 +45,8 @@ CODEX_BIN=codex
 CODEX_MODEL=
 CODEX_REASONING_EFFORT=xhigh
 CODEX_SERVICE_TIER=fast
-CODEX_TIMEOUT_MS=300000
+CODEX_IDLE_TIMEOUT_MS=300000
+CODEX_MAX_RUNTIME_MS=1800000
 WORKSPACE_DIR=/absolute/path/to/workspace
 FEISHU_DOMAIN=feishu
 ALLOW_NON_OWNER=false
@@ -54,6 +55,8 @@ ALLOW_NON_OWNER=false
 `FEISHU_DOMAIN=lark` 可切换到 Lark 国际版。语音识别兜底需要 `ffmpeg` 以及飞书 `speech_to_text:speech` 权限。
 
 `CODEX_REASONING_EFFORT=xhigh` 启用 Extra high 推理。`CODEX_SERVICE_TIER=fast` 启用 Codex Fast mode，速度更快但会消耗更多 credits。
+
+长任务不会因总运行超过 300 秒就失败。`CODEX_IDLE_TIMEOUT_MS` 只在 Codex 持续无任何输出时触发；`CODEX_MAX_RUNTIME_MS` 是防止失控任务的最终上限。旧的 `CODEX_TIMEOUT_MS` 仍可作为无活动超时兼容项。
 
 ## 架构
 
