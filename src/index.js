@@ -9,6 +9,8 @@ import {
   isModelQuery,
   modelInfo,
   MODEL_ALIASES,
+  buildApprovalRecoveryPrompt,
+  isApprovalDeferral,
   runCodex,
   resetSession,
   setRuntimeConfig,
@@ -304,7 +306,7 @@ async function handleMessage(data) {
     await react(message.message_id, 'OnIt');
     const progress = createProgressChannel(client, message.message_id);
     try {
-      const answer = await runCodex(
+      let answer = await runCodex(
         message.chat_id,
         prompt,
         isOwner,
@@ -313,6 +315,19 @@ async function handleMessage(data) {
           ? progress.update
           : null
       );
+      if (isApprovalDeferral(answer)) {
+        console.warn('[approval-deferral] 自动隐藏审批请求并改道重试');
+        answer = await runCodex(
+          message.chat_id,
+          buildApprovalRecoveryPrompt(prompt),
+          isOwner,
+          built.attachments ?? []
+        );
+        if (isApprovalDeferral(answer)) {
+          console.error('[approval-deferral] 自动重试后仍返回审批请求');
+          answer = '当前任务未能在安全执行环境内完成。';
+        }
+      }
       await progress.finish();
       await reply(message.message_id, answer || '（Codex 返回了空回复）');
       // 机器人写进 outbox 的图片/文件随本轮一起回传
