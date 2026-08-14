@@ -1,6 +1,8 @@
 # feishu-codex-bridge
 
-[English](README.en.md) | **中文**
+[![version](https://img.shields.io/badge/version-1.4.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+**中文** | [English](README.en.md)
 
 把本机 Codex CLI 接入飞书：私聊或在群里 @机器人即可与 Codex 对话。飞书事件通过 WebSocket 长连接到达，无需公网服务器、域名或回调地址。
 
@@ -9,7 +11,10 @@
 - 每个飞书会话映射一个 Codex thread，支持跨天续聊
 - 支持文本、图片、文件、语音、富文本和合并转发
 - 首个私聊者自动成为 owner：owner 使用 `workspace-write`，其他成员使用 `read-only`
-- `/new` 重开会话，`/status` 查看 thread、模型和权限，`/model` 查看桥接实际配置的模型
+- `/new` 重开会话，`/status` 查看 thread、模型和权限
+- `/model sol high` 即时切换模型与推理档，无需重启；支持定时 `set-model`
+- `/cancel` 取消任务，`/redirect` 中断并改道，`/voice` 切换语音回复
+- 支持定时任务、出站脱敏、文件回传、访问白名单及飞书文档/多维表格 MCP 工具
 - 直接使用本机 Codex 登录态，不需要额外 API Key
 
 ## 安装

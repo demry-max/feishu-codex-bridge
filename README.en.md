@@ -1,16 +1,19 @@
 # feishu-codex-bridge
 
-**English** | [中文](README.md)
+[![version](https://img.shields.io/badge/version-1.4.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+[中文](README.md) | **English**
 
 Chat with the local Codex CLI from Feishu or Lark. The bridge uses Feishu's persistent WebSocket connection, so it needs no public server, domain, or callback URL.
 
 ## Features
 
 - Persistent Codex thread per Feishu chat
-- Reliable `/model` reporting from the bridge configuration instead of model self-identification
+- Live model switching with `/model sol high`, including scheduled `set-model` actions
 - Text, image, file, voice, rich-post, and merged-forward messages
 - QR-based Feishu app registration
 - Durable workspace memory and project-scoped Codex skills
+- Scheduled tasks, cancellation/redirect controls, outbound redaction, outbox uploads, and Feishu MCP tools
 - Owner-only access by default
 - macOS and Linux auto-start installation
 

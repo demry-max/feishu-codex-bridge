@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import {
   buildCodexArgs,
   createJsonlProgressParser,
+  getRuntimeConfig,
   isModelQuery,
+  MODEL_ALIASES,
   parseJsonl,
   resolveTimeouts,
+  setRuntimeConfig,
 } from '../src/codex.js';
 
 test('parses Codex JSONL thread id and last agent message', () => {
@@ -28,7 +31,7 @@ test('parses failed turns', () => {
 });
 
 test('places exec-level sandbox before resume', () => {
-  assert.deepEqual(buildCodexArgs('thread-123', true), [
+  assert.deepEqual(buildCodexArgs('thread-123', true, [], { feishuTools: false }), [
     'exec',
     '--sandbox',
     'workspace-write',
@@ -54,6 +57,7 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     model: 'gpt-5.6-sol',
     reasoningEffort: 'xhigh',
     serviceTier: 'fast',
+    feishuTools: false,
   });
   assert.deepEqual(args.slice(0, 11), [
     'exec',
@@ -83,6 +87,21 @@ test('can disable owner network access and never enables it for non-owners', () 
     ),
     false
   );
+});
+
+test('maps runtime model aliases and effort without requiring a restart', () => {
+  const next = setRuntimeConfig({ model: 'sol', effort: 'high' }, { persist: false });
+  assert.equal(MODEL_ALIASES.sol, 'gpt-5.6-sol');
+  assert.equal(next.model, 'gpt-5.6-sol');
+  assert.equal(next.effort, 'high');
+  assert.deepEqual(getRuntimeConfig(), next);
+});
+
+test('enables the built-in Feishu MCP only for owner sessions', () => {
+  const ownerArgs = buildCodexArgs('', true, [], { feishuTools: true });
+  assert.equal(ownerArgs.some((arg) => arg.startsWith('mcp_servers.feishu.command=')), true);
+  const nonOwnerArgs = buildCodexArgs('', false, [], { feishuTools: true });
+  assert.equal(nonOwnerArgs.some((arg) => arg.startsWith('mcp_servers.feishu.command=')), false);
 });
 
 test('uses an idle timeout with a separate hard runtime limit', () => {
