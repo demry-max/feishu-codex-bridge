@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import {
   buildCodexArgs,
   createJsonlProgressParser,
+  getRuntimeConfig,
   isModelQuery,
+  MODEL_ALIASES,
   parseJsonl,
   resolveTimeouts,
+  setRuntimeConfig,
 } from '../src/codex.js';
 
 test('parses Codex JSONL thread id and last agent message', () => {
@@ -27,11 +30,16 @@ test('parses failed turns', () => {
   assert.equal(parseJsonl(output).error, 'boom');
 });
 
-test('places exec-level sandbox before resume', () => {
-  assert.deepEqual(buildCodexArgs('thread-123', true), [
+test('places exec-level sandbox and non-interactive controls before resume', () => {
+  assert.deepEqual(buildCodexArgs('thread-123', true, [], { feishuTools: false }), [
     'exec',
     '--sandbox',
     'workspace-write',
+    '--ignore-rules',
+    '--config',
+    'approval_policy="never"',
+    '--config',
+    'sandbox_workspace_write.network_access=true',
     'resume',
     '--json',
     '--skip-git-repo-check',
@@ -52,21 +60,67 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     model: 'gpt-5.6-sol',
     reasoningEffort: 'xhigh',
     serviceTier: 'fast',
+    feishuTools: false,
   });
-  assert.deepEqual(args.slice(0, 12), [
+  assert.deepEqual(args.slice(0, 14), [
     'exec',
     '--sandbox',
     'workspace-write',
+    '--ignore-rules',
+    '--config',
+    'approval_policy="never"',
+    '--config',
+    'sandbox_workspace_write.network_access=true',
     '--config',
     'model_reasoning_effort="xhigh"',
     '--config',
     'service_tier="fast"',
     '--config',
     'features.fast_mode=true',
-    'resume',
-    '--json',
-    '--skip-git-repo-check',
   ]);
+});
+
+test('keeps sandboxing while disabling interactive approvals for bridge runs', () => {
+  const args = buildCodexArgs('', true, [], {
+    feishuTools: false,
+    networkAccess: false,
+  });
+  assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
+  assert.equal(args.includes('--ignore-rules'), true);
+  assert.equal(args.includes('approval_policy="never"'), true);
+  const nonOwnerArgs = buildCodexArgs('', false, [], { feishuTools: false });
+  assert.equal(nonOwnerArgs.includes('--ignore-rules'), false);
+  assert.equal(nonOwnerArgs.includes('read-only'), true);
+});
+
+test('can disable owner network access and never enables it for non-owners', () => {
+  assert.equal(
+    buildCodexArgs('', true, [], { networkAccess: false }).includes(
+      'sandbox_workspace_write.network_access=true'
+    ),
+    false
+  );
+  assert.equal(
+    buildCodexArgs('', false, [], { networkAccess: true }).includes(
+      'sandbox_workspace_write.network_access=true'
+    ),
+    false
+  );
+});
+
+test('maps runtime model aliases and effort without requiring a restart', () => {
+  const next = setRuntimeConfig({ model: 'sol', effort: 'high' }, { persist: false });
+  assert.equal(MODEL_ALIASES.sol, 'gpt-5.6-sol');
+  assert.equal(next.model, 'gpt-5.6-sol');
+  assert.equal(next.effort, 'high');
+  assert.deepEqual(getRuntimeConfig(), next);
+});
+
+test('enables the built-in Feishu MCP only for owner sessions', () => {
+  const ownerArgs = buildCodexArgs('', true, [], { feishuTools: true });
+  assert.equal(ownerArgs.some((arg) => arg.startsWith('mcp_servers.feishu.command=')), true);
+  const nonOwnerArgs = buildCodexArgs('', false, [], { feishuTools: true });
+  assert.equal(nonOwnerArgs.some((arg) => arg.startsWith('mcp_servers.feishu.command=')), false);
 });
 
 test('uses an idle timeout with a separate hard runtime limit', () => {
