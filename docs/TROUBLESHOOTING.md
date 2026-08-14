@@ -1,5 +1,11 @@
 # 故障排查 / Troubleshooting
 
+## 机器人能列出 memory 文件，但新会话不一定使用记忆
+
+上游 Claude 版通过 `CLAUDE.md` 的 `@memory/MEMORY.md` 自动导入索引；Codex 的 `AGENTS.md` 只保证加载指令文件，不能把 Claude 的 `@import` 当成等价机制。桥接现在会在每次 owner 调用前直接读取 `workspace/memory/MEMORY.md` 并注入提示词，再由 Codex 按任务需要读取链接的明细文件。`/status` 会显示已自动加载的索引条数。
+
+普通成员不会收到 owner 的记忆索引；密码、密钥和 token 不应写入任何记忆文件。
+
 ## 长任务在 300 秒后报超时
 
 旧版使用固定 300 秒总运行上限，创建飞书文档、扫描大量聊天记录等仍在正常执行的任务也会被误杀。新版改为 300 秒“无活动”超时：只要 Codex 持续产生输出，计时器就会重置。默认最长运行时间为 30 分钟。

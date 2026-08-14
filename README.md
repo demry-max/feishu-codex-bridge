@@ -101,6 +101,7 @@ Codex CLI
 ## 记忆与 Skills
 
 - `workspace/memory/MEMORY.md` 是长期记忆索引
+- 桥接会在每次 owner 调用前显式读取并注入该索引，不依赖模型临时调用工具；索引中的明细文件仅在相关任务中按需读取
 - 对机器人说“记住……”，Codex 会在 `workspace/memory/` 添加记忆
 - 说“存成技能”，技能会保存到 `workspace/skills/`
 - 桥接会在每次调用前同步技能到 `workspace/.agents/skills/`
