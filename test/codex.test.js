@@ -1,15 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildApprovalRecoveryPrompt,
+  buildAutonomousPrompt,
   buildCodexArgs,
   createJsonlProgressParser,
   getRuntimeConfig,
   isModelQuery,
+  isApprovalDeferral,
   MODEL_ALIASES,
   parseJsonl,
   resolveTimeouts,
   setRuntimeConfig,
 } from '../src/codex.js';
+
+test('adds non-interactive autonomy instructions to every prompt', () => {
+  const prompt = buildAutonomousPrompt('读取合同并给结论');
+  assert.match(prompt, /无人值守/);
+  assert.match(prompt, /不要要求用户批准/);
+  assert.match(prompt, /读取合同并给结论/);
+});
+
+test('detects approval deferrals and builds a safe recovery prompt', () => {
+  assert.equal(isApprovalDeferral('This command requires approval'), true);
+  assert.equal(isApprovalDeferral('请在 ~/.claude/settings.json 给 python3 加白名单'), true);
+  assert.equal(isApprovalDeferral('需要你批准运行 python3 来读取文档'), true);
+  assert.equal(isApprovalDeferral('合同存在三处高风险条款。'), false);
+  const recovery = buildApprovalRecoveryPrompt('可以签吗？');
+  assert.match(recovery, /上一条回复无效/);
+  assert.match(recovery, /可以签吗/);
+});
 
 test('parses Codex JSONL thread id and last agent message', () => {
   const output = [

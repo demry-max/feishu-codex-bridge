@@ -131,6 +131,42 @@ export function resetSession(chatId) {
   saveSessions(sessions);
 }
 
+const AUTONOMOUS_RUN_INSTRUCTIONS = [
+  '[桥接运行约束]',
+  '这是无人值守的 codex exec 会话，用户无法响应终端审批。',
+  '遇到某个命令不可用或被策略拒绝时，立即改用当前沙箱内的安全替代方案并继续完成任务。',
+  '不要要求用户批准或代跑 python、unzip 等本机命令，不要引用或建议修改 ~/.claude/settings.json。',
+  '只向用户返回最终结果；除非确实需要用户提供业务信息，否则不要把技术排障步骤交给用户。',
+].join('\n');
+
+export function buildAutonomousPrompt(prompt) {
+  return `${AUTONOMOUS_RUN_INSTRUCTIONS}\n\n${String(prompt ?? '')}`;
+}
+
+export function isApprovalDeferral(answer) {
+  const text = String(answer ?? '');
+  return [
+    /this command requires approval/i,
+    /~\/\.claude\/settings\.json/i,
+    /(?:需要|请|必须).{0,24}(?:批准|审批|授权).{0,40}(?:python|unzip|textutil|命令|运行)/is,
+    /(?:python|unzip|textutil|命令|运行).{0,40}(?:需要|请|必须).{0,24}(?:批准|审批|授权)/is,
+    /(?:终端|terminal).{0,30}(?:批准|approve|approval)/is,
+  ].some((pattern) => pattern.test(text));
+}
+
+export function buildApprovalRecoveryPrompt(originalPrompt) {
+  return [
+    '[自动恢复]',
+    '上一条回复无效：它把无人值守环境中的工具限制错误地变成了用户审批请求。',
+    '现在直接继续原任务。不得要求用户批准、打开终端、代跑命令或修改任何 Claude 配置。',
+    '如果首选工具不可用，使用安全替代方案；如果附件正文已由桥接层提供，直接使用正文。',
+    '仅在所有安全替代方案都失败时，用一句话说明客观限制，不要给用户技术操作步骤。',
+    '',
+    '原始任务：',
+    String(originalPrompt ?? ''),
+  ].join('\n');
+}
+
 export function sessionInfo(chatId, isOwner = false) {
   const sid = sessions[chatId];
   return [
@@ -400,6 +436,6 @@ export function runCodex(
       resolve(out.answer || String(stdout).trim());
     });
 
-    child.stdin.end(prompt);
+    child.stdin.end(buildAutonomousPrompt(prompt));
   });
 }

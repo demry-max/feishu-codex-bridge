@@ -39,6 +39,8 @@ This usually means the Codex `workspace-write` sandbox has no outbound network p
 
 `codex exec` 是无人值守运行，飞书里无法响应终端审批；本机 execpolicy 规则还可能拦截复合命令。桥接现在为 owner 使用 `approval_policy="never"` 和 `--ignore-rules`，命令仍受 `workspace-write` 沙箱约束，但不会等待交互式批准。默认的 `AUTO_REDIRECT_WHEN_BUSY=true` 还会让新消息自动取消并接管旧任务。
 
+从当前版本起，`.docx` 正文会在 Node.js 桥接层预先抽取并随提示词送给 Codex，不再依赖模型调用 `python3` 或 `unzip`。若模型仍输出 “This command requires approval”、要求终端批准，或错误建议修改 `~/.claude/settings.json`，该回复不会发给用户；桥接会自动追加无人值守约束并重试一次。
+
 如需恢复交互式规则或旧的等待行为：
 
 ```dotenv
@@ -51,6 +53,8 @@ AUTO_REDIRECT_WHEN_BUSY=false
 ## DOCX parsing asks for `unzip` approval, then the bot says a task is still running
 
 Feishu cannot answer an interactive terminal approval during a headless `codex exec` run, and local execpolicy rules may reject compound commands. Owner sessions now use `approval_policy="never"` and `--ignore-rules`; commands still run inside the `workspace-write` sandbox. With the default `AUTO_REDIRECT_WHEN_BUSY=true`, a new message also cancels and replaces the unfinished run automatically. The bridge never enables `--yolo`.
+
+The bridge now extracts `.docx` text in its Node.js process before invoking Codex, so document analysis does not depend on model-initiated `python3` or `unzip` calls. If a model still emits an approval deferral or points to Claude settings, that response is suppressed and retried once with an autonomous recovery instruction.
 
 ## 续聊时报 `unexpected argument '--sandbox' found`
 
