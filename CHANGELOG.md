@@ -15,6 +15,8 @@
 - **模型配置此前必须重启才能生效**：`CODEX_MODEL` / `CODEX_REASONING_EFFORT` 从模块加载时的常量改为运行时变量。
 - **弃用外部定时脚本**：原先靠 macOS launchd 拉起 shell 脚本改配置，在外置卷（exFAT）上会被系统拦下
   （`Operation not permitted`，TCC 层面），定时切换静默失败。现由桥接自身的调度器执行，不再依赖 launchd。
+- **无头命令等待审批**：owner 任务改为 `approval_policy="never"` 并忽略交互式 execpolicy 规则，`unzip` 等命令可在 `workspace-write` 沙箱内直接执行，不启用 `--yolo`。
+- **旧任务阻塞新消息**：默认自动取消并接管同一会话中未完成的旧任务，可用 `AUTO_REDIRECT_WHEN_BUSY=false` 恢复手动控制。
 
 ## [1.3.1] - 2026-07-31
 

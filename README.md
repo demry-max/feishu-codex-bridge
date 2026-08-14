@@ -51,12 +51,15 @@ CODEX_MODEL=
 CODEX_REASONING_EFFORT=xhigh
 CODEX_SERVICE_TIER=fast
 CODEX_NETWORK_ACCESS=true
+CODEX_APPROVAL_POLICY=never
+CODEX_IGNORE_EXEC_RULES=true
 CODEX_IDLE_TIMEOUT_MS=300000
 CODEX_MAX_RUNTIME_MS=1800000
 WORKSPACE_DIR=/absolute/path/to/workspace
 FEISHU_DOMAIN=feishu
 ALLOW_NON_OWNER=false
 ENABLE_PROGRESS_UPDATES=false
+AUTO_REDIRECT_WHEN_BUSY=true
 ```
 
 `FEISHU_DOMAIN=lark` 可切换到 Lark 国际版。语音识别兜底需要 `ffmpeg` 以及飞书 `speech_to_text:speech` 权限。
@@ -65,9 +68,13 @@ ENABLE_PROGRESS_UPDATES=false
 
 `CODEX_NETWORK_ACCESS=true` 允许 owner 的 `workspace-write` 沙箱访问网络，供 `lark-cli`、npm 和飞书 OpenAPI 使用；非 owner 的 `read-only` 沙箱不会因此获得网络权限。可设为 `false` 关闭。
 
+桥接默认使用 `CODEX_APPROVAL_POLICY=never`，避免无头任务等待无法完成的交互式审批；owner 同时设置 `CODEX_IGNORE_EXEC_RULES=true`，让 `unzip`、文档解析等命令在 `workspace-write` 沙箱内直接执行。沙箱仍然生效，并未使用危险的 `--yolo`。
+
 长任务不会因总运行超过 300 秒就失败。`CODEX_IDLE_TIMEOUT_MS` 只在 Codex 持续无任何输出时触发；`CODEX_MAX_RUNTIME_MS` 是防止失控任务的最终上限。旧的 `CODEX_TIMEOUT_MS` 仍可作为无活动超时兼容项。
 
 默认 `ENABLE_PROGRESS_UPDATES=false`，只向飞书发送最终结果。如果需要在长任务中查看阶段性进度，可显式设为 `true`。
+
+默认 `AUTO_REDIRECT_WHEN_BUSY=true`：同一会话的新消息会自动取消尚未完成的旧任务并接管，不再要求手动发送 `/cancel` 或 `/redirect`。设为 `false` 可恢复 v1.4.0 的等待提示。
 
 ## 架构
 

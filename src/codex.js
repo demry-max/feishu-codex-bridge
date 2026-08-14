@@ -31,6 +31,10 @@ const CODEX_SERVICE_TIER = process.env.CODEX_SERVICE_TIER || '';
 const CODEX_NETWORK_ACCESS = !/^(0|false|no)$/i.test(
   process.env.CODEX_NETWORK_ACCESS || 'true'
 );
+const CODEX_APPROVAL_POLICY = process.env.CODEX_APPROVAL_POLICY || 'never';
+const CODEX_IGNORE_EXEC_RULES = !/^(0|false|no)$/i.test(
+  process.env.CODEX_IGNORE_EXEC_RULES || 'true'
+);
 const FEISHU_TOOLS = process.env.FEISHU_TOOLS !== 'false';
 
 const sessions = loadSessions(); // { [chatId]: threadId }
@@ -141,6 +145,8 @@ export function sessionInfo(chatId, isOwner = false) {
     `- 你的身份: ${isOwner ? 'owner' : '普通成员'}`,
     `- 沙箱权限: ${isOwner ? 'workspace-write' : 'read-only'}`,
     `- 沙箱联网: ${isOwner && CODEX_NETWORK_ACCESS ? '已启用' : '未启用'}`,
+    `- 命令审批: ${CODEX_APPROVAL_POLICY}`,
+    `- owner 命令规则: ${isOwner && CODEX_IGNORE_EXEC_RULES ? '忽略本机交互式规则' : '使用本机规则'}`,
     `- 飞书 MCP: ${isOwner && FEISHU_TOOLS ? '已启用' : '未启用'}`,
   ].join('\n');
 }
@@ -265,9 +271,15 @@ export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime =
   const reasoningEffort = runtime.reasoningEffort ?? CODEX_REASONING_EFFORT;
   const serviceTier = runtime.serviceTier ?? CODEX_SERVICE_TIER;
   const networkAccess = runtime.networkAccess ?? CODEX_NETWORK_ACCESS;
+  const approvalPolicy = runtime.approvalPolicy ?? CODEX_APPROVAL_POLICY;
+  const ignoreExecRules = runtime.ignoreExecRules ?? CODEX_IGNORE_EXEC_RULES;
   const feishuTools = runtime.feishuTools ?? FEISHU_TOOLS;
   // --sandbox 属于 `codex exec` 而不是 `codex exec resume`，必须放在 resume 之前。
   const args = ['exec', '--sandbox', isOwner ? 'workspace-write' : 'read-only'];
+  if (isOwner && ignoreExecRules) args.push('--ignore-rules');
+  if (approvalPolicy) {
+    args.push('--config', `approval_policy=${JSON.stringify(approvalPolicy)}`);
+  }
   if (isOwner && networkAccess) {
     args.push('--config', 'sandbox_workspace_write.network_access=true');
   }

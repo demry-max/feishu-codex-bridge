@@ -30,11 +30,14 @@ test('parses failed turns', () => {
   assert.equal(parseJsonl(output).error, 'boom');
 });
 
-test('places exec-level sandbox before resume', () => {
+test('places exec-level sandbox and non-interactive controls before resume', () => {
   assert.deepEqual(buildCodexArgs('thread-123', true, [], { feishuTools: false }), [
     'exec',
     '--sandbox',
     'workspace-write',
+    '--ignore-rules',
+    '--config',
+    'approval_policy="never"',
     '--config',
     'sandbox_workspace_write.network_access=true',
     'resume',
@@ -59,10 +62,13 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     serviceTier: 'fast',
     feishuTools: false,
   });
-  assert.deepEqual(args.slice(0, 11), [
+  assert.deepEqual(args.slice(0, 14), [
     'exec',
     '--sandbox',
     'workspace-write',
+    '--ignore-rules',
+    '--config',
+    'approval_policy="never"',
     '--config',
     'sandbox_workspace_write.network_access=true',
     '--config',
@@ -72,6 +78,19 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     '--config',
     'features.fast_mode=true',
   ]);
+});
+
+test('keeps sandboxing while disabling interactive approvals for bridge runs', () => {
+  const args = buildCodexArgs('', true, [], {
+    feishuTools: false,
+    networkAccess: false,
+  });
+  assert.equal(args.includes('--dangerously-bypass-approvals-and-sandbox'), false);
+  assert.equal(args.includes('--ignore-rules'), true);
+  assert.equal(args.includes('approval_policy="never"'), true);
+  const nonOwnerArgs = buildCodexArgs('', false, [], { feishuTools: false });
+  assert.equal(nonOwnerArgs.includes('--ignore-rules'), false);
+  assert.equal(nonOwnerArgs.includes('read-only'), true);
 });
 
 test('can disable owner network access and never enables it for non-owners', () => {

@@ -26,6 +26,9 @@ const ALLOW_NON_OWNER = /^(1|true|yes)$/i.test(process.env.ALLOW_NON_OWNER || 'f
 const ENABLE_PROGRESS_UPDATES = /^(1|true|yes)$/i.test(
   process.env.ENABLE_PROGRESS_UPDATES || 'false'
 );
+const AUTO_REDIRECT_WHEN_BUSY = !/^(0|false|no)$/i.test(
+  process.env.AUTO_REDIRECT_WHEN_BUSY || 'true'
+);
 
 if (!APP_ID || !APP_SECRET) {
   console.error('缺少 FEISHU_APP_ID / FEISHU_APP_SECRET，请检查 .env');
@@ -270,8 +273,11 @@ async function handleMessage(data) {
   }
   // 任务进行中收到新指令：提示可取消/重定向
   if (isRunning(message.chat_id) && !text.startsWith('/redirect')) {
-    await reply(message.message_id, '⏳ 上一个任务还在跑。发 **/cancel** 取消，或 **/redirect 你的新要求** 取消并按新要求重来（会话上下文保留）。');
-    return;
+    if (!AUTO_REDIRECT_WHEN_BUSY) {
+      await reply(message.message_id, '⏳ 上一个任务还在跑。发 **/cancel** 取消，或 **/redirect 你的新要求** 取消并按新要求重来（会话上下文保留）。');
+      return;
+    }
+    cancelRun(message.chat_id);
   }
   if (text.startsWith('/redirect')) {
     const extra = text.replace(/^\/redirect\s*/, '').trim();

@@ -47,9 +47,13 @@ Set `CODEX_REASONING_EFFORT=xhigh` for Extra high reasoning and `CODEX_SERVICE_T
 
 Owner sessions enable outbound access in the `workspace-write` sandbox by default so `lark-cli`, npm, and Feishu OpenAPI can work. Set `CODEX_NETWORK_ACCESS=false` to disable it. Non-owner `read-only` sessions do not receive network access from this setting.
 
+Headless bridge runs use `CODEX_APPROVAL_POLICY=never` so they never wait for an approval that cannot be answered from Feishu. Owner runs also default to `CODEX_IGNORE_EXEC_RULES=true`, allowing document tools such as `unzip` to run inside the existing `workspace-write` sandbox. The bridge does not use `--yolo`, so sandbox restrictions remain enforced.
+
 Long-running active tasks are not stopped merely because they exceed five minutes. `CODEX_IDLE_TIMEOUT_MS` resets whenever Codex produces output, while `CODEX_MAX_RUNTIME_MS` remains a final safety cap. The legacy `CODEX_TIMEOUT_MS` is still accepted as an idle-timeout fallback.
 
 `ENABLE_PROGRESS_UPDATES=false` is the default, so Feishu receives only the final result. Set it to `true` to opt into intermediate status messages for long tasks.
+
+`AUTO_REDIRECT_WHEN_BUSY=true` is the default. A new message in the same chat cancels and replaces an unfinished task instead of requiring a manual `/cancel` or `/redirect`. Set it to `false` to restore the v1.4.0 waiting prompt.
 
 ## Security
 

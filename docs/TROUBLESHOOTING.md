@@ -35,6 +35,23 @@ The model may not know the exact model ID supplied by the bridge to Codex CLI. U
 
 This usually means the Codex `workspace-write` sandbox has no outbound network permission, rather than a Feishu or npm outage. Owner sessions now pass `sandbox_workspace_write.network_access=true`; set `CODEX_NETWORK_ACCESS=false` to disable it. Non-owner read-only sessions remain offline.
 
+## 读取 `.docx` 时要求用户批准 `unzip`，随后一直显示“上一个任务还在跑”
+
+`codex exec` 是无人值守运行，飞书里无法响应终端审批；本机 execpolicy 规则还可能拦截复合命令。桥接现在为 owner 使用 `approval_policy="never"` 和 `--ignore-rules`，命令仍受 `workspace-write` 沙箱约束，但不会等待交互式批准。默认的 `AUTO_REDIRECT_WHEN_BUSY=true` 还会让新消息自动取消并接管旧任务。
+
+如需恢复交互式规则或旧的等待行为：
+
+```dotenv
+CODEX_IGNORE_EXEC_RULES=false
+AUTO_REDIRECT_WHEN_BUSY=false
+```
+
+桥接不会使用 `--dangerously-bypass-approvals-and-sandbox` / `--yolo`。
+
+## DOCX parsing asks for `unzip` approval, then the bot says a task is still running
+
+Feishu cannot answer an interactive terminal approval during a headless `codex exec` run, and local execpolicy rules may reject compound commands. Owner sessions now use `approval_policy="never"` and `--ignore-rules`; commands still run inside the `workspace-write` sandbox. With the default `AUTO_REDIRECT_WHEN_BUSY=true`, a new message also cancels and replaces the unfinished run automatically. The bridge never enables `--yolo`.
+
 ## 续聊时报 `unexpected argument '--sandbox' found`
 
 症状：机器人首条消息能正常回复，但第二条消息或已有会话会返回：
