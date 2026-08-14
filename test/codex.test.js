@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   buildApprovalRecoveryPrompt,
   buildAutonomousPrompt,
@@ -8,6 +11,7 @@ import {
   getRuntimeConfig,
   isModelQuery,
   isApprovalDeferral,
+  loadMemoryIndex,
   MODEL_ALIASES,
   parseJsonl,
   resolveTimeouts,
@@ -15,10 +19,29 @@ import {
 } from '../src/codex.js';
 
 test('adds non-interactive autonomy instructions to every prompt', () => {
-  const prompt = buildAutonomousPrompt('读取合同并给结论');
+  const prompt = buildAutonomousPrompt('读取合同并给结论', {
+    memoryIndex: '- [回复偏好](reply-style.md) — 只输出结果',
+  });
   assert.match(prompt, /无人值守/);
   assert.match(prompt, /不要要求用户批准/);
+  assert.match(prompt, /长期记忆索引（桥接自动加载）/);
+  assert.match(prompt, /reply-style\.md/);
   assert.match(prompt, /读取合同并给结论/);
+});
+
+test('loads the workspace memory index without requiring model tool use', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'feishu-codex-memory-'));
+  fs.mkdirSync(path.join(root, 'memory'));
+  fs.writeFileSync(
+    path.join(root, 'memory', 'MEMORY.md'),
+    '# 长期记忆索引\n- [语言偏好](language.md) — 中文回答\n'
+  );
+  try {
+    assert.match(loadMemoryIndex(root), /语言偏好/);
+    assert.equal(loadMemoryIndex(path.join(root, 'missing')), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('detects approval deferrals and builds a safe recovery prompt', () => {

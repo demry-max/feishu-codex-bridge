@@ -36,6 +36,7 @@ const CODEX_IGNORE_EXEC_RULES = !/^(0|false|no)$/i.test(
   process.env.CODEX_IGNORE_EXEC_RULES || 'true'
 );
 const FEISHU_TOOLS = process.env.FEISHU_TOOLS !== 'false';
+const MEMORY_INDEX_MAX_CHARS = 16_000;
 
 const sessions = loadSessions(); // { [chatId]: threadId }
 const running = new Map(); // { [chatId]: ChildProcess }
@@ -139,8 +140,30 @@ const AUTONOMOUS_RUN_INSTRUCTIONS = [
   '只向用户返回最终结果；除非确实需要用户提供业务信息，否则不要把技术排障步骤交给用户。',
 ].join('\n');
 
-export function buildAutonomousPrompt(prompt) {
-  return `${AUTONOMOUS_RUN_INSTRUCTIONS}\n\n${String(prompt ?? '')}`;
+export function loadMemoryIndex(workspaceDir = WORKSPACE_DIR) {
+  try {
+    const indexPath = path.join(workspaceDir, 'memory', 'MEMORY.md');
+    const index = fs.readFileSync(indexPath, 'utf8').replace(/\0/g, '').trim();
+    return index.slice(0, MEMORY_INDEX_MAX_CHARS);
+  } catch {
+    return '';
+  }
+}
+
+export function buildAutonomousPrompt(prompt, { memoryIndex = '' } = {}) {
+  const memoryContext = memoryIndex
+    ? [
+        '[长期记忆索引（桥接自动加载）]',
+        '以下内容来自 memory/MEMORY.md。把它作为跨会话背景；当前用户指令冲突时以当前指令为准。',
+        '仅在任务相关时读取索引链接的 memory/*.md；不要在回复中复述整个记忆结构。',
+        '--- memory/MEMORY.md ---',
+        memoryIndex,
+        '--- 记忆索引结束 ---',
+      ].join('\n')
+    : '';
+  return [AUTONOMOUS_RUN_INSTRUCTIONS, memoryContext, String(prompt ?? '')]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function isApprovalDeferral(answer) {
@@ -169,6 +192,8 @@ export function buildApprovalRecoveryPrompt(originalPrompt) {
 
 export function sessionInfo(chatId, isOwner = false) {
   const sid = sessions[chatId];
+  const memoryIndex = isOwner ? loadMemoryIndex() : '';
+  const memoryCount = (memoryIndex.match(/^\s*-\s+\[[^\]]+\]\([^)]+\.md\)/gm) ?? []).length;
   return [
     '**会话状态**',
     `- Codex thread: ${sid ? `\`${sid}\`` : '（无，下一条消息将新建）'}`,
@@ -184,6 +209,7 @@ export function sessionInfo(chatId, isOwner = false) {
     `- 命令审批: ${CODEX_APPROVAL_POLICY}`,
     `- owner 命令规则: ${isOwner && CODEX_IGNORE_EXEC_RULES ? '忽略本机交互式规则' : '使用本机规则'}`,
     `- 飞书 MCP: ${isOwner && FEISHU_TOOLS ? '已启用' : '未启用'}`,
+    `- 长期记忆: ${isOwner ? `已自动加载索引（${memoryCount} 条）` : '未向普通成员加载'}`,
   ].join('\n');
 }
 
@@ -436,6 +462,8 @@ export function runCodex(
       resolve(out.answer || String(stdout).trim());
     });
 
-    child.stdin.end(buildAutonomousPrompt(prompt));
+    child.stdin.end(
+      buildAutonomousPrompt(prompt, { memoryIndex: isOwner ? loadMemoryIndex() : '' })
+    );
   });
 }
