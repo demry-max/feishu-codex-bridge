@@ -21,6 +21,20 @@ Older versions used a fixed five-minute total runtime limit. The current bridge 
 
 The model may not know the exact model ID supplied by the bridge to Codex CLI. Use `/model`; the bridge returns the configured `CODEX_MODEL` directly. `/status` includes the same value.
 
+## `open.feishu.cn` 或 `registry.npmjs.org` 无法解析
+
+如果 Codex 报告飞书 OpenAPI 或 npm 域名无法解析，通常不是域名故障，而是 `workspace-write` 沙箱默认没有网络权限。桥接现在为 owner 的会话传入：
+
+```bash
+--config sandbox_workspace_write.network_access=true
+```
+
+并默认设置 `CODEX_NETWORK_ACCESS=true`。如需禁用 owner 的沙箱联网，可在 `.env` 中设为 `false`。该设置不会给非 owner 的 `read-only` 会话开放网络。
+
+## Cannot resolve `open.feishu.cn` or `registry.npmjs.org`
+
+This usually means the Codex `workspace-write` sandbox has no outbound network permission, rather than a Feishu or npm outage. Owner sessions now pass `sandbox_workspace_write.network_access=true`; set `CODEX_NETWORK_ACCESS=false` to disable it. Non-owner read-only sessions remain offline.
+
 ## 续聊时报 `unexpected argument '--sandbox' found`
 
 症状：机器人首条消息能正常回复，但第二条消息或已有会话会返回：

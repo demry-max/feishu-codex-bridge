@@ -32,6 +32,8 @@ test('places exec-level sandbox before resume', () => {
     'exec',
     '--sandbox',
     'workspace-write',
+    '--config',
+    'sandbox_workspace_write.network_access=true',
     'resume',
     '--json',
     '--skip-git-repo-check',
@@ -53,20 +55,34 @@ test('applies explicit reasoning effort and fast service tier before resume', ()
     reasoningEffort: 'xhigh',
     serviceTier: 'fast',
   });
-  assert.deepEqual(args.slice(0, 12), [
+  assert.deepEqual(args.slice(0, 11), [
     'exec',
     '--sandbox',
     'workspace-write',
+    '--config',
+    'sandbox_workspace_write.network_access=true',
     '--config',
     'model_reasoning_effort="xhigh"',
     '--config',
     'service_tier="fast"',
     '--config',
     'features.fast_mode=true',
-    'resume',
-    '--json',
-    '--skip-git-repo-check',
   ]);
+});
+
+test('can disable owner network access and never enables it for non-owners', () => {
+  assert.equal(
+    buildCodexArgs('', true, [], { networkAccess: false }).includes(
+      'sandbox_workspace_write.network_access=true'
+    ),
+    false
+  );
+  assert.equal(
+    buildCodexArgs('', false, [], { networkAccess: true }).includes(
+      'sandbox_workspace_write.network_access=true'
+    ),
+    false
+  );
 });
 
 test('uses an idle timeout with a separate hard runtime limit', () => {

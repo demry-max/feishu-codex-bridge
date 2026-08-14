@@ -28,6 +28,9 @@ const { idleTimeoutMs: CODEX_IDLE_TIMEOUT_MS, maxRuntimeMs: CODEX_MAX_RUNTIME_MS
 const CODEX_MODEL = process.env.CODEX_MODEL || '';
 const CODEX_REASONING_EFFORT = process.env.CODEX_REASONING_EFFORT || '';
 const CODEX_SERVICE_TIER = process.env.CODEX_SERVICE_TIER || '';
+const CODEX_NETWORK_ACCESS = !/^(0|false|no)$/i.test(
+  process.env.CODEX_NETWORK_ACCESS || 'true'
+);
 
 const sessions = loadSessions(); // { [chatId]: threadId }
 
@@ -60,6 +63,7 @@ export function sessionInfo(chatId, isOwner = false) {
     `- 工作目录: \`${WORKSPACE_DIR}\``,
     `- 你的身份: ${isOwner ? 'owner' : '普通成员'}`,
     `- 沙箱权限: ${isOwner ? 'workspace-write' : 'read-only'}`,
+    `- 沙箱联网: ${isOwner && CODEX_NETWORK_ACCESS ? '已启用' : '未启用'}`,
   ].join('\n');
 }
 
@@ -161,8 +165,12 @@ export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime =
   const model = runtime.model ?? CODEX_MODEL;
   const reasoningEffort = runtime.reasoningEffort ?? CODEX_REASONING_EFFORT;
   const serviceTier = runtime.serviceTier ?? CODEX_SERVICE_TIER;
+  const networkAccess = runtime.networkAccess ?? CODEX_NETWORK_ACCESS;
   // --sandbox 属于 `codex exec` 而不是 `codex exec resume`，必须放在 resume 之前。
   const args = ['exec', '--sandbox', isOwner ? 'workspace-write' : 'read-only'];
+  if (isOwner && networkAccess) {
+    args.push('--config', 'sandbox_workspace_write.network_access=true');
+  }
   if (reasoningEffort) {
     args.push('--config', `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
   }

@@ -14,8 +14,8 @@ import { loadOwner, saveOwner } from './store.js';
 const APP_ID = process.env.FEISHU_APP_ID;
 const APP_SECRET = process.env.FEISHU_APP_SECRET;
 const ALLOW_NON_OWNER = /^(1|true|yes)$/i.test(process.env.ALLOW_NON_OWNER || 'false');
-const ENABLE_PROGRESS_UPDATES = !/^(0|false|no)$/i.test(
-  process.env.ENABLE_PROGRESS_UPDATES || 'true'
+const ENABLE_PROGRESS_UPDATES = /^(1|true|yes)$/i.test(
+  process.env.ENABLE_PROGRESS_UPDATES || 'false'
 );
 
 if (!APP_ID || !APP_SECRET) {

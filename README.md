@@ -45,21 +45,24 @@ CODEX_BIN=codex
 CODEX_MODEL=
 CODEX_REASONING_EFFORT=xhigh
 CODEX_SERVICE_TIER=fast
+CODEX_NETWORK_ACCESS=true
 CODEX_IDLE_TIMEOUT_MS=300000
 CODEX_MAX_RUNTIME_MS=1800000
 WORKSPACE_DIR=/absolute/path/to/workspace
 FEISHU_DOMAIN=feishu
 ALLOW_NON_OWNER=false
-ENABLE_PROGRESS_UPDATES=true
+ENABLE_PROGRESS_UPDATES=false
 ```
 
 `FEISHU_DOMAIN=lark` 可切换到 Lark 国际版。语音识别兜底需要 `ffmpeg` 以及飞书 `speech_to_text:speech` 权限。
 
 `CODEX_REASONING_EFFORT=xhigh` 启用 Extra high 推理。`CODEX_SERVICE_TIER=fast` 启用 Codex Fast mode，速度更快但会消耗更多 credits。
 
+`CODEX_NETWORK_ACCESS=true` 允许 owner 的 `workspace-write` 沙箱访问网络，供 `lark-cli`、npm 和飞书 OpenAPI 使用；非 owner 的 `read-only` 沙箱不会因此获得网络权限。可设为 `false` 关闭。
+
 长任务不会因总运行超过 300 秒就失败。`CODEX_IDLE_TIMEOUT_MS` 只在 Codex 持续无任何输出时触发；`CODEX_MAX_RUNTIME_MS` 是防止失控任务的最终上限。旧的 `CODEX_TIMEOUT_MS` 仍可作为无活动超时兼容项。
 
-`ENABLE_PROGRESS_UPDATES=true` 会将 Codex 在长任务中的阶段性说明实时回复到飞书，最终答案仍只发送一次。
+默认 `ENABLE_PROGRESS_UPDATES=false`，只向飞书发送最终结果。如果需要在长任务中查看阶段性进度，可显式设为 `true`。
 
 ## 架构
 
@@ -77,6 +80,7 @@ Codex CLI
 
 - `.env`、`data/` 和运行时 workspace 内容均被 Git 忽略
 - 默认只允许 owner 使用机器人；可用 `ALLOW_NON_OWNER=true` 显式开放
+- 默认只给 owner 的 `workspace-write` 沙箱开放网络；可用 `CODEX_NETWORK_ACCESS=false` 关闭
 - 开放后，非 owner 进程使用 `read-only` 沙箱，但这不代表主机上的所有文件都不可见
 - owner 使用 `workspace-write`；建议为机器人使用独立 workspace，不要指向含敏感数据的目录
 

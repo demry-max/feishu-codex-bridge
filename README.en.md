@@ -42,13 +42,15 @@ Set `FEISHU_DOMAIN=lark` in `.env` before registration for international Lark.
 
 Set `CODEX_REASONING_EFFORT=xhigh` for Extra high reasoning and `CODEX_SERVICE_TIER=fast` for Codex Fast mode. Fast mode uses more credits.
 
+Owner sessions enable outbound access in the `workspace-write` sandbox by default so `lark-cli`, npm, and Feishu OpenAPI can work. Set `CODEX_NETWORK_ACCESS=false` to disable it. Non-owner `read-only` sessions do not receive network access from this setting.
+
 Long-running active tasks are not stopped merely because they exceed five minutes. `CODEX_IDLE_TIMEOUT_MS` resets whenever Codex produces output, while `CODEX_MAX_RUNTIME_MS` remains a final safety cap. The legacy `CODEX_TIMEOUT_MS` is still accepted as an idle-timeout fallback.
 
-`ENABLE_PROGRESS_UPDATES=true` streams Codex's intermediate status messages to Feishu during long tasks while keeping the final answer single-delivery.
+`ENABLE_PROGRESS_UPDATES=false` is the default, so Feishu receives only the final result. Set it to `true` to opt into intermediate status messages for long tasks.
 
 ## Security
 
-Only the owner is allowed by default. Setting `ALLOW_NON_OWNER=true` opts into access for other users with Codex's `read-only` sandbox. A read-only sandbox prevents writes; it should not be treated as complete file-visibility isolation. Use a dedicated workspace without sensitive files.
+Only the owner is allowed by default. Setting `ALLOW_NON_OWNER=true` opts into access for other users with Codex's `read-only` sandbox. Owner network access can be disabled with `CODEX_NETWORK_ACCESS=false`. A read-only sandbox prevents writes; it should not be treated as complete file-visibility isolation. Use a dedicated workspace without sensitive files.
 
 Secrets in `.env`, owner/session data, incoming attachments, memories, and user-created skills are git-ignored.
 
