@@ -134,6 +134,7 @@ export function resetSession(chatId) {
 
 const AUTONOMOUS_RUN_INSTRUCTIONS = [
   '[桥接运行约束]',
+  '当前运行时是 Codex CLI，不是 Claude Code。不得声称正在使用 Claude，也不得要求用户运行 claude /login；Codex 认证只使用 codex login。',
   '这是无人值守的 codex exec 会话，用户无法响应终端审批。',
   '遇到某个命令不可用或被策略拒绝时，立即改用当前沙箱内的安全替代方案并继续完成任务。',
   '不要要求用户批准或代跑 python、unzip 等本机命令，不要引用或建议修改 ~/.claude/settings.json。',
@@ -175,6 +176,27 @@ export function isApprovalDeferral(answer) {
     /(?:python|unzip|textutil|命令|运行).{0,40}(?:需要|请|必须).{0,24}(?:批准|审批|授权)/is,
     /(?:终端|terminal).{0,30}(?:批准|approve|approval)/is,
   ].some((pattern) => pattern.test(text));
+}
+
+export function isClaudeRuntimeLeak(answer) {
+  const text = String(answer ?? '');
+  return [
+    /Claude\s*(?:CLI|Code)?\s*(?:登录|认证|身份验证).{0,24}(?:过期|失效|失败|重新)/is,
+    /(?:运行|执行|run|try).{0,30}`?claude\s+\/?login`?/is,
+    /Not logged in.{0,40}(?:claude\s+)?\/?login/is,
+  ].some((pattern) => pattern.test(text));
+}
+
+export function buildRuntimeIdentityRecoveryPrompt(originalPrompt) {
+  return [
+    '[运行时身份自动恢复]',
+    '上一条回复无效：它把本服务错误识别成了 Claude。',
+    '本服务只通过 Codex CLI 执行，当前助手身份是 Codex；不得声称使用 Claude，不得要求运行 claude /login。',
+    '现在从头完成原始任务，只返回最终结果。若 Codex 认证确实失败，应报告需要 codex login。',
+    '',
+    '原始任务：',
+    String(originalPrompt ?? ''),
+  ].join('\n');
 }
 
 export function buildApprovalRecoveryPrompt(originalPrompt) {

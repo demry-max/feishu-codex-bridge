@@ -10,7 +10,9 @@ import {
   modelInfo,
   MODEL_ALIASES,
   buildApprovalRecoveryPrompt,
+  buildRuntimeIdentityRecoveryPrompt,
   isApprovalDeferral,
+  isClaudeRuntimeLeak,
   runCodex,
   resetSession,
   setRuntimeConfig,
@@ -326,6 +328,20 @@ async function handleMessage(data) {
         if (isApprovalDeferral(answer)) {
           console.error('[approval-deferral] 自动重试后仍返回审批请求');
           answer = '当前任务未能在安全执行环境内完成。';
+        }
+      }
+      if (isClaudeRuntimeLeak(answer)) {
+        console.warn('[runtime-identity] 隐藏 Claude 身份串线回复，重置会话并用 Codex 重试');
+        resetSession(message.chat_id);
+        answer = await runCodex(
+          message.chat_id,
+          buildRuntimeIdentityRecoveryPrompt(prompt),
+          isOwner,
+          built.attachments ?? []
+        );
+        if (isClaudeRuntimeLeak(answer)) {
+          console.error('[runtime-identity] 新会话重试后仍返回 Claude 身份串线回复');
+          answer = '当前任务未能由 Codex 正确完成，会话已重置，请重试。';
         }
       }
       await progress.finish();

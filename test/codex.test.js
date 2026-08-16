@@ -5,12 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildApprovalRecoveryPrompt,
+  buildRuntimeIdentityRecoveryPrompt,
   buildAutonomousPrompt,
   buildCodexArgs,
   createJsonlProgressParser,
   getRuntimeConfig,
   isModelQuery,
   isApprovalDeferral,
+  isClaudeRuntimeLeak,
   loadMemoryIndex,
   MODEL_ALIASES,
   parseJsonl,
@@ -52,6 +54,19 @@ test('detects approval deferrals and builds a safe recovery prompt', () => {
   const recovery = buildApprovalRecoveryPrompt('可以签吗？');
   assert.match(recovery, /上一条回复无效/);
   assert.match(recovery, /可以签吗/);
+});
+
+test('detects Claude runtime identity leaks and builds a Codex-only retry', () => {
+  assert.equal(
+    isClaudeRuntimeLeak('Mac 上的 Claude 登录已过期，请运行 `claude /login`。'),
+    true
+  );
+  assert.equal(isClaudeRuntimeLeak('Please run claude /login and try again.'), true);
+  assert.equal(isClaudeRuntimeLeak('Codex 登录已过期，请运行 codex login。'), false);
+  assert.equal(isClaudeRuntimeLeak('帮我比较 Claude Code 和 Codex。'), false);
+  const recovery = buildRuntimeIdentityRecoveryPrompt('我有什么待办？');
+  assert.match(recovery, /只通过 Codex CLI/);
+  assert.match(recovery, /我有什么待办/);
 });
 
 test('parses Codex JSONL thread id and last agent message', () => {

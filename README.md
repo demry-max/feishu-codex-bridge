@@ -72,6 +72,8 @@ AUTO_REDIRECT_WHEN_BUSY=true
 
 DOCX 文件会先由 Node.js 桥接层安全抽取正文，再交给 Codex 分析，因此不会依赖模型临时调用 `python3`、`unzip` 或要求用户批准命令。如果模型仍返回审批话术或错误引用 `~/.claude/settings.json`，桥接会隐藏该回复并自动改用安全方案重试一次。
 
+桥接会在每次调用中明确锁定 Codex 运行时；若回复错误声称 Claude 登录过期或要求运行 `claude /login`，该回复会被隐藏，旧 thread 会被重置，并由 Codex 在新会话中自动重试。若本机同时保留旧 Claude bridge，请确认飞书里选择的是正确机器人，或停止旧服务，避免两个同名机器人混淆。
+
 长任务不会因总运行超过 300 秒就失败。`CODEX_IDLE_TIMEOUT_MS` 只在 Codex 持续无任何输出时触发；`CODEX_MAX_RUNTIME_MS` 是防止失控任务的最终上限。旧的 `CODEX_TIMEOUT_MS` 仍可作为无活动超时兼容项。
 
 默认 `ENABLE_PROGRESS_UPDATES=false`，只向飞书发送最终结果。如果需要在长任务中查看阶段性进度，可显式设为 `true`。
