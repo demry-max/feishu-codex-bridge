@@ -16,6 +16,7 @@
 - `/cancel` 取消任务，`/redirect` 中断并改道，`/voice` 切换语音回复
 - 支持定时任务、出站脱敏、文件回传、访问白名单及飞书文档/多维表格 MCP 工具
 - 直接使用本机 Codex 登录态，不需要额外 API Key
+- 可通过私有 MCP 和安全隧道把本机 Lark Mail 接入 ChatGPT（仅搜索、读取和创建草稿）
 
 ## 安装
 
@@ -42,6 +43,8 @@ npm start
 `npm run register` 会显示飞书授权二维码，扫码后自动创建应用，并将凭据写入被 Git 忽略的 `.env`。日志出现 `[ws] ws client ready` 后，到飞书私聊机器人发送“你好”即可。
 
 遇到续聊失败、后台服务未更新等问题，请查看 [故障排查](docs/TROUBLESHOOTING.md)。
+
+如需在 ChatGPT 中像连接 Gmail 一样调用 Lark Mail，请按 [Lark Mail 私有连接指南](docs/CHATGPT_LARK_MAIL.md) 配置。
 
 ## 可选配置
 
