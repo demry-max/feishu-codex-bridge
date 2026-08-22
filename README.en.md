@@ -16,6 +16,7 @@ Chat with the local Codex CLI from Feishu or Lark. The bridge uses Feishu's pers
 - Scheduled tasks, cancellation/redirect controls, outbound redaction, outbox uploads, and Feishu MCP tools
 - Owner-only access by default
 - macOS and Linux auto-start installation
+- Optional private MCP connection for ChatGPT to search, read, and draft Lark Mail
 
 ## One-line install
 
@@ -28,6 +29,8 @@ curl -fsSL https://raw.githubusercontent.com/demry-max/feishu-codex-bridge/main/
 The installer checks your Codex login, clones the project, installs dependencies, guides you through Feishu QR registration, and installs a user-level background service.
 
 For resume errors and service-update instructions, see [Troubleshooting](docs/TROUBLESHOOTING.md).
+
+To use Lark Mail from ChatGPT through a private app, follow the [Lark Mail connection guide](docs/CHATGPT_LARK_MAIL.md).
 
 Manual setup:
 
