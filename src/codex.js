@@ -143,7 +143,23 @@ export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
  * 升级了终端里那份、而进程管理器指向另一份时，模型请求会直接被服务端拒绝
  * （"requires a newer version of Codex"），而桥接自身看着一切正常。
  */
-export function checkCliEnvironment() {
+// 模型对 CLI 版本的最低要求。写在这里而不是靠试错，是因为版本不够时
+// 报错发生在**用户发消息那一刻**（"requires a newer version of Codex"），
+// 而不是启动时——桥接看着一切正常，人却收到 400。
+const MODEL_MIN_CLI = [
+  { re: /^gpt-6/, min: '0.150.0' },
+];
+
+const cmpVer = (a, b) => {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  }
+  return 0;
+};
+
+export function checkCliEnvironment(model = CODEX_MODEL) {
   const res = { bin: CODEX_BIN, version: null, ok: false, problem: null };
   try {
     const out = spawn.sync(CODEX_BIN, ['--version'], { encoding: 'utf8', env: process.env });
@@ -159,6 +175,13 @@ export function checkCliEnvironment() {
     res.version = (String(out.stdout ?? '').match(/(\d+\.\d+\.\d+)/) ?? [])[1] ?? null;
     if (!res.version) {
       res.problem = `无法解析 codex 版本：${String(out.stdout ?? out.stderr ?? '').slice(0, 120)}`;
+      return res;
+    }
+    const need = MODEL_MIN_CLI.find((m) => m.re.test(model ?? ''));
+    if (need && cmpVer(res.version, need.min) < 0) {
+      res.problem =
+        `模型 ${model} 需要 codex CLI ≥ ${need.min}，但 ${res.bin} 是 ${res.version}。` +
+        `请升级该路径下的 codex（注意本机可能装了多份，CODEX_BIN 与 PATH 里靠前的那份才生效），或改用其他模型。`;
       return res;
     }
     res.ok = true;
@@ -192,6 +215,28 @@ function patchEnvFile(updates) {
   } catch (error) {
     console.error('[config] 回写 .env 失败:', error?.message ?? error);
   }
+}
+
+// 别名解析与校验：非法值回落到全局配置并告警，不把垃圾直接传给 CLI。
+// 抽成函数是为了让 /model、set-model 定时动作、任务级 model 三条路径行为一致——
+// 此前只有 setRuntimeConfig 内联做校验，任务里写的别名走不到这层。
+export function normalizeModel(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const resolved = MODEL_ALIASES[String(v).toLowerCase()] ?? String(v).trim();
+  if (!/^[a-zA-Z0-9._-]+$/.test(resolved)) {
+    console.error(`[config] 忽略非法模型名「${v}」，回落到全局配置`);
+    return null;
+  }
+  return resolved;
+}
+export function normalizeEffort(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const e = String(v).toLowerCase().trim();
+  if (!EFFORT_LEVELS.includes(e)) {
+    console.error(`[config] 忽略非法思考档「${v}」，回落到全局配置`);
+    return null;
+  }
+  return e;
 }
 
 export function setRuntimeConfig({ model, effort } = {}, { persist = true } = {}) {
@@ -375,18 +420,40 @@ export function loadMemoryIndex(workspaceDir = WORKSPACE_DIR) {
   return parts.join('\n\n').slice(0, MEMORY_INDEX_MAX_CHARS);
 }
 
-export function buildAutonomousPrompt(prompt, { memoryIndex = '' } = {}) {
+/**
+ * 运行配置随每次调用注入，而不是写共享的 runtime.md：
+ * 定时任务与聊天是并发的两个 codex 进程、共享同一工作区，写文件必然互相覆盖，
+ * 模型会读到别人的 chat_id（进而把排期发错会话）。逐次注入天然无竞态。
+ */
+export function buildRuntimeContext(chatId, runtime = {}) {
+  const realChat = typeof chatId === 'string' && !chatId.startsWith('sched') ? chatId : null;
+  return [
+    '[当前运行配置（桥接注入，权威来源）]',
+    `- 模型：${runtime.model ?? CODEX_MODEL ?? '（Codex CLI 默认）'}`,
+    `- 推理强度：${runtime.reasoningEffort ?? CODEX_REASONING_EFFORT ?? '（Codex CLI 默认）'}`,
+    `- 服务速度：${runtime.serviceTier ?? CODEX_SERVICE_TIER ?? '（Codex CLI 默认）'}`,
+    `- 当前会话 chat_id：${realChat ?? '（本次为定时任务，无对应会话）'}`,
+    '被问到「你用什么模型/什么档位」时以上面为准，不要凭自身记忆推测。',
+    realChat
+      ? '创建定时任务时，chat_id 直接用上面这个值，不要编造。'
+      : '本次是定时任务，没有可用的 chat_id；不要创建需要 chat_id 的新任务。',
+  ].join('\n');
+}
+
+export function buildAutonomousPrompt(prompt, { memoryIndex = '', runtimeContext = '' } = {}) {
   const memoryContext = memoryIndex
     ? [
-        '[长期记忆索引（桥接自动加载）]',
-        '以下内容来自 memory/MEMORY.md。把它作为跨会话背景；当前用户指令冲突时以当前指令为准。',
-        '仅在任务相关时读取索引链接的 memory/*.md；不要在回复中复述整个记忆结构。',
-        '--- memory/MEMORY.md ---',
+        '[长期记忆（桥接自动加载）]',
+        '以下是画像层（memory/USER.md）与事实层索引（memory/MEMORY.md）。',
+        '把它作为跨会话背景；与当前用户指令冲突时以当前指令为准。',
+        '仅在任务相关时读取索引链接的 memory/*.md；流水层在 memory/journal/ 里按需检索。',
+        '不要在回复中复述整个记忆结构。',
+        '--- 记忆开始 ---',
         memoryIndex,
-        '--- 记忆索引结束 ---',
+        '--- 记忆结束 ---',
       ].join('\n')
     : '';
-  return [AUTONOMOUS_RUN_INSTRUCTIONS, memoryContext, String(prompt ?? '')]
+  return [AUTONOMOUS_RUN_INSTRUCTIONS, runtimeContext, memoryContext, String(prompt ?? '')]
     .filter(Boolean)
     .join('\n\n');
 }
@@ -479,26 +546,6 @@ export function modelInfo() {
     : '**当前模型**：Codex CLI 默认模型（未设置 `CODEX_MODEL`）。';
 }
 
-function writeRuntimeInfo(chatId) {
-  try {
-    const realChat = typeof chatId === 'string' && !chatId.startsWith('sched:') ? chatId : null;
-    fs.writeFileSync(
-      path.join(WORKSPACE_DIR, 'runtime.md'),
-      [
-        '# 当前运行配置（桥接自动生成，权威来源）',
-        '',
-        `- 模型：${CODEX_MODEL || '（Codex CLI 默认）'}`,
-        `- 推理强度：${CODEX_REASONING_EFFORT || '（Codex CLI 默认）'}`,
-        `- 服务速度：${CODEX_SERVICE_TIER || '（Codex CLI 默认）'}`,
-        `- 当前会话 chat_id：${realChat ?? '（定时任务）'}`,
-        '',
-        '用户询问当前模型或推理档位时，以本文件为准。',
-      ].join('\n') + '\n'
-    );
-  } catch (error) {
-    console.error('[runtime-info]', error?.message ?? error);
-  }
-}
 
 export function parseJsonl(stdout) {
   let threadId = '';
@@ -576,8 +623,8 @@ export function createJsonlProgressParser(onProgress) {
 
 export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime = {}) {
   const cwd = workspaceFor(isOwner);
-  const model = runtime.model ?? CODEX_MODEL;
-  const reasoningEffort = runtime.reasoningEffort ?? CODEX_REASONING_EFFORT;
+  const model = normalizeModel(runtime.model) ?? CODEX_MODEL;
+  const reasoningEffort = normalizeEffort(runtime.reasoningEffort) ?? CODEX_REASONING_EFFORT;
   const serviceTier = runtime.serviceTier ?? CODEX_SERVICE_TIER;
   const networkAccess = runtime.networkAccess ?? CODEX_NETWORK_ACCESS;
   const approvalPolicy = runtime.approvalPolicy ?? CODEX_APPROVAL_POLICY;
@@ -623,15 +670,14 @@ export function buildCodexArgs(sid, isOwner = false, attachments = [], runtime =
   return args;
 }
 
-export function runCodex(
+function runCodexOnce(
   chatId,
   prompt,
   isOwner = false,
   attachments = [],
   onProgress = null
 ) {
-  syncSkills();
-  writeRuntimeInfo(chatId);
+  if (isOwner) syncSkills(); // 访客工作区没有技能目录，也不该有
   const sid = sessions[chatId];
   const args = buildCodexArgs(sid, isOwner, attachments);
 
@@ -714,7 +760,55 @@ export function runCodex(
     });
 
     child.stdin.end(
-      buildAutonomousPrompt(prompt, { memoryIndex: isOwner ? loadMemoryIndex() : '' })
+      buildAutonomousPrompt(prompt, {
+        memoryIndex: isOwner ? loadMemoryIndex() : '',
+        runtimeContext: buildRuntimeContext(chatId),
+      })
     );
   });
+}
+
+// ---- 断连自动重试 ----
+const CODEX_MAX_RETRIES = Number(process.env.CODEX_MAX_RETRIES ?? 2);
+const RETRY_DELAYS_MS = [3_000, 15_000];
+
+const RETRYABLE =
+  /Connection (lost|error|closed|reset)|ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network error|stream (error|disconnected)|Internal server error|overloaded|\b(502|503|529)\b/i;
+// 这些即便字面上像网络问题也不该重试
+const NEVER_RETRY = /Not logged in|OAuth|authenticate|Invalid API|超时|CANCELLED|启动失败/i;
+
+
+/**
+ * 运行 codex，网络类失败自动重试（默认最多 2 次，退避 3s / 15s）。
+ * 次数用 CODEX_MAX_RETRIES 调整，设 0 关闭。
+ *
+ * 只重试「还没动过手」的早期失败：一旦模型开始输出，就可能已经写过文件、
+ * 发过消息、改过记忆——整段重放会造成双写，比不重试更糟。
+ */
+export async function runCodex(chatId, prompt, isOwner = false, attachments = [], onProgress = null) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await runCodexOnce(chatId, prompt, isOwner, attachments, onProgress);
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (e?.producedOutput && !e?.cancelled && RETRYABLE.test(msg)) {
+        console.log(`[retry] ${chatId} 已产生输出，断连后不自动重放（避免重复写入/重复发送）`);
+        e.message = `${msg}\n（任务已执行到一半，为避免重复写入未自动重试——请确认副作用后手动重发）`;
+        throw e;
+      }
+      const retryable =
+        !e?.cancelled && !NEVER_RETRY.test(msg) && RETRYABLE.test(msg) && attempt < CODEX_MAX_RETRIES;
+      if (!retryable) throw e;
+      const delay = RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1];
+      console.log(
+        `[retry] ${chatId} 网络类失败，${delay / 1000}s 后重试（${attempt + 1}/${CODEX_MAX_RETRIES}）：${msg.slice(0, 120)}`
+      );
+      if (onProgress) {
+        try {
+          await onProgress(`⚠️ 连接中断，${delay / 1000} 秒后自动重试（第 ${attempt + 1}/${CODEX_MAX_RETRIES} 次）`);
+        } catch {}
+      }
+      await sleepAbortable(chatId, delay);
+    }
+  }
 }

@@ -26,7 +26,7 @@ test('adds non-interactive autonomy instructions to every prompt', () => {
   });
   assert.match(prompt, /无人值守/);
   assert.match(prompt, /不要要求用户批准/);
-  assert.match(prompt, /长期记忆索引（桥接自动加载）/);
+  assert.match(prompt, /长期记忆（桥接自动加载）/);
   assert.match(prompt, /reply-style\.md/);
   assert.match(prompt, /读取合同并给结论/);
 });

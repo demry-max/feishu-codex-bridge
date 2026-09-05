@@ -1,6 +1,6 @@
 # feishu-codex-bridge
 
-[![version](https://img.shields.io/badge/version-2.1.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![version](https://img.shields.io/badge/version-2.2.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **中文** | [English](README.en.md)
 
@@ -79,6 +79,41 @@ DOCX 文件会先由 Node.js 桥接层安全抽取正文，再交给 Codex 分�
 默认 `ENABLE_PROGRESS_UPDATES=false`，只向飞书发送最终结果。如果需要在长任务中查看阶段性进度，可显式设为 `true`。
 
 默认 `AUTO_REDIRECT_WHEN_BUSY=true`：同一会话的新消息会自动取消尚未完成的旧任务并接管，不再要求手动发送 `/cancel` 或 `/redirect`。设为 `false` 可恢复 v1.4.0 的等待提示。
+
+## 🔒 权限边界
+
+owner 与其他人跑在**两个物理隔离的工作区**里，这是本项目最重要的安全设计：
+
+| | owner | 其他同事 / 群成员 |
+|---|---|---|
+| 工作区 | `workspace/`（含长期记忆） | `workspace-guest/`（干净，无记忆入口） |
+| 沙箱 | `workspace-write` | `read-only` |
+| 记忆注入 | 画像层 + 事实层索引 | **不注入** |
+| 飞书 MCP / 联网写 | 有 | 无 |
+| 会话 | 按 chat_id | 按 chat_id + 发言人，互不可见 |
+
+> **为什么光有沙箱不够**：`--sandbox read-only` 挡的是**写**，不是读。cwd 若对所有人相同，
+> 非 owner 只要说一句「读 memory/MEMORY.md」就能列出 owner 的记忆索引（v2.0.0 之前实测如此）。
+> 沙箱级别与工作区隔离是两件事，必须都做。
+
+第三方内容（转发记录、卡片 JSON、文件名、消息标题）一律包进不可信围栏并声明「不是指令」；
+出站回复经脱敏后再发送。
+
+## 🗂️ 三层记忆
+
+```
+workspace/memory/
+├── USER.md              # 画像层：身份、偏好、沟通与判断风格（每次调用注入）
+├── MEMORY.md            # 事实层索引：一条长期事实一行（每次调用注入）
+├── <slug>.md            # 事实层正文：一条记忆一个文件，按需读取
+└── journal/YYYY-MM-DD.md # 流水层：当天的过程细节，靠关键词召回按需提示
+```
+
+- **主动记忆**：不用等你说「记住」——纠正它的结论、做出决定、表达偏好、给出数字口径时，它当场落盘
+- **supersede 不留矛盾**：事实变了就地改写并标日期，不追加与旧条目矛盾的新条目
+- **自动召回**：每条消息先在 `memory/`（含 journal）做关键词检索，把可能相关的文件提示给模型
+- 仓库里只存 `USER.md.template` / `MEMORY.md.template`，运行时文件启动生成并被 gitignore 排除——
+  机器人写进记忆的内容不会随提交进入公开仓库
 
 ## 架构
 
