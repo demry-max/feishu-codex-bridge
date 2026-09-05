@@ -23,6 +23,30 @@ export function workspaceFor(isOwner) {
   return isOwner ? WORKSPACE_DIR : GUEST_WORKSPACE_DIR;
 }
 
+// chatId 可能含 : . 等字符（如 sched:weekly-review.json）。
+// 必须保留区分度：早先把 '.' 也折叠成 '_'，导致 a.json 与 a_json 撞进同一个 outbox 目录。
+const safeKey = (chatId) => {
+  const raw = String(chatId);
+  const cleaned = raw.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
+  // 追加短哈希，杜绝不同 chatId 折叠后碰撞
+  let h = 0;
+  for (let i = 0; i < raw.length; i++) h = (h * 31 + raw.charCodeAt(i)) >>> 0;
+  return `${cleaned}-${h.toString(36)}`;
+};
+
+// 定时任务/自诊断用的伪会话：一次性上下文，不 resume 也不持久化
+export const isEphemeral = (chatId) => typeof chatId === 'string' && chatId.startsWith('sched');
+
+/**
+ * 本轮专属的文件回传目录。共享一个 outbox 会导致跨会话错发：
+ * 定时任务写的文件会被下一条任意消息顺手发走。
+ */
+export function outboxDirFor(chatId, isOwner = true) {
+  return path.join(workspaceFor(isOwner), 'outbox', safeKey(chatId));
+}
+
+
+
 const GUEST_AGENTS_MD = `# 访客助手工作区
 
 你是通过飞书对话的 AI 助手，正在回应**非 owner 的同事或群成员**。
@@ -187,8 +211,84 @@ export function setRuntimeConfig({ model, effort } = {}, { persist = true } = {}
   return getRuntimeConfig();
 }
 
+// 上下文接近压缩点时提醒机器人先固化记忆的阈值（0 = 关闭）
+const CONTEXT_NUDGE_TOKENS = Number(process.env.CONTEXT_NUDGE_TOKENS ?? 850_000);
+const contextSize = new Map();  // chatId → 最近一轮喂入的上下文规模
+const nudgePending = new Set(); // 待注入提醒的会话
+
+export function getContextTokens(chatId) {
+  return contextSize.get(chatId) ?? 0;
+}
+export function getNudgeThreshold() {
+  return CONTEXT_NUDGE_TOKENS;
+}
+// 有待提醒则返回 true 并清位（取走即消费，保证只注入一次）
+export function consumeMemoryNudge(chatId) {
+  if (!nudgePending.has(chatId)) return false;
+  nudgePending.delete(chatId);
+  nudgeInFlight.add(chatId); // 只是「已注入」；真正跑成功后才允许回收会话
+  return true;
+}
+
+// 注入了固化提醒、但还不知道那一轮成没成功
+const nudgeInFlight = new Set();
+
+// 记忆已固化、可以安全重开会话的标记
+const memoryFlushed = new Set();
+
+/**
+ * 固化提醒已被执行过的会话，下一轮开始前重开——
+ * 该留的已经落盘到 memory/，继续背着上百万 token 的历史只是在重复付钱。
+ * 取走即消费，避免反复重置。
+ */
+export function shouldRecycleSession(chatId) {
+  if (!memoryFlushed.has(chatId)) return false;
+  memoryFlushed.delete(chatId);
+  const ctx = contextSize.get(chatId) ?? 0;
+  return ctx >= CONTEXT_NUDGE_TOKENS; // 仍然很大才回收；已经小了就不折腾
+}
+
+function noteContext(chatId, ctx) {
+  contextSize.set(chatId, ctx);
+  if (CONTEXT_NUDGE_TOKENS > 0 && ctx >= CONTEXT_NUDGE_TOKENS && !nudgePending.has(chatId)) {
+    nudgePending.add(chatId);
+    console.log(`[context] ${chatId} 上下文 ${ctx.toLocaleString()} ≥ 阈值，下一轮将提醒固化记忆`);
+  }
+}
+
+// /new 的代际计数：任务运行期间被重置时，本轮的 session_id 不得回写
+const resetGeneration = new Map();
+
+
+// 可中止的退避等待：/cancel 在重试间隙也必须生效，
+// 否则用户看到「已取消」而重试照常发生（或被告知「没有正在运行的任务」）
+const retryWaiters = new Map(); // chatId → { cancel }
+export function abortRetries(chatId) {
+  const w = retryWaiters.get(chatId);
+  if (!w) return false;
+  w.cancel();
+  return true;
+}
+const sleepAbortable = (chatId, ms) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      retryWaiters.delete(chatId);
+      resolve();
+    }, ms);
+    retryWaiters.set(chatId, {
+      cancel: () => {
+        clearTimeout(timer);
+        retryWaiters.delete(chatId);
+        const err = new Error('CANCELLED');
+        err.cancelled = true;
+        reject(err);
+      },
+    });
+  });
+
+
 export function isRunning(chatId) {
-  return running.has(chatId);
+  return running.has(chatId) || retryWaiters.has(chatId);
 }
 
 export function cancelRun(chatId) {
@@ -222,9 +322,22 @@ function syncSkills() {
   }
 }
 
+// 群里 owner 需要清扫「该群下所有访客」的会话/运行，键里带 open_id 故按前缀枚举
+export function sessionKeysWithPrefix(prefix) {
+  return Object.keys(sessions).filter((k) => k.startsWith(prefix));
+}
+export function runningKeysWithPrefix(prefix) {
+  return [...running.keys()].filter((k) => k.startsWith(prefix));
+}
+
 export function resetSession(chatId) {
   delete sessions[chatId];
   saveSessions(sessions);
+  // 代际 +1：正在跑的那一轮结束时不得把旧 session 写回来（否则 /new 被静默撤销）
+  resetGeneration.set(chatId, (resetGeneration.get(chatId) ?? 0) + 1);
+  contextSize.delete(chatId);
+  nudgePending.delete(chatId);
+  memoryFlushed.delete(chatId);
 }
 
 const AUTONOMOUS_RUN_INSTRUCTIONS = [
