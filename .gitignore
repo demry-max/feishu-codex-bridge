@@ -5,10 +5,11 @@ workspace/*
 !workspace/AGENTS.md
 !workspace/memory/
 workspace/memory/*
-!workspace/memory/MEMORY.md
+!workspace/memory/MEMORY.md.template
 !workspace/skills/
 workspace/skills/*
 !workspace/skills/README.md
 bridge.log
 ._*
 .DS_Store
+workspace-guest/

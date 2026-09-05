@@ -17,8 +17,7 @@ import {
   resetSession,
   setRuntimeConfig,
   sessionInfo,
-  WORKSPACE_DIR,
-} from './codex.js';
+  WORKSPACE_DIR, checkCliEnvironment, workspaceFor, GUEST_WORKSPACE_DIR } from './codex.js';
 import { buildPrompt } from './messages.js';
 import { loadOwner, saveOwner } from './store.js';
 import { startScheduler } from './scheduler.js';
@@ -189,6 +188,11 @@ async function handleMessage(data) {
     return;
   }
   const isOwner = senderOpenId === owner;
+
+  // 会话键区分身份：群里 owner 与访客共用 chat_id，若共用 session，
+  // 访客一次 resume 就能续到 owner 那条带记忆的会话，工作区隔离会被绕过。
+  // 访客再按发言人细分，避免同群访客互相看到历史或被单人植入长效指令。
+  const sessionKey = isOwner ? message.chat_id : `guest:${message.chat_id}:${senderOpenId}`;
   if (!isOwner && !ALLOW_NON_OWNER) {
     await reply(message.message_id, '⛔ 该机器人默认仅限 owner 使用。');
     return;
@@ -197,7 +201,7 @@ async function handleMessage(data) {
   // ---- 消息 → 提示词（文本/图片/文件/富文本/合并转发/卡片） ----
   let built;
   try {
-    built = await buildPrompt(client, message, WORKSPACE_DIR);
+    built = await buildPrompt(client, message, workspaceFor(isOwner), senderOpenId);
   } catch (e) {
     console.error('[buildPrompt]', e);
     await reply(
@@ -216,12 +220,12 @@ async function handleMessage(data) {
 
   // ---- 内置命令 ----
   if (text === '/new') {
-    resetSession(message.chat_id);
+    resetSession(sessionKey);
     await reply(message.message_id, '🆕 已重置，下一条消息将开启全新 Codex 会话。');
     return;
   }
   if (text === '/status') {
-    await reply(message.message_id, sessionInfo(message.chat_id, isOwner));
+    await reply(message.message_id, sessionInfo(sessionKey, isOwner));
     return;
   }
   if (text === '/help' || text === '帮助') {
@@ -265,7 +269,7 @@ async function handleMessage(data) {
     return;
   }
   if (text === '/cancel' || text === '取消') {
-    const killed = cancelRun(message.chat_id);
+    const killed = cancelRun(sessionKey);
     await reply(message.message_id, killed ? '🛑 已取消当前任务。' : '当前没有正在运行的任务。');
     return;
   }
@@ -276,12 +280,12 @@ async function handleMessage(data) {
     return;
   }
   // 任务进行中收到新指令：提示可取消/重定向
-  if (isRunning(message.chat_id) && !text.startsWith('/redirect')) {
+  if (isRunning(sessionKey) && !text.startsWith('/redirect')) {
     if (!AUTO_REDIRECT_WHEN_BUSY) {
       await reply(message.message_id, '⏳ 上一个任务还在跑。发 **/cancel** 取消，或 **/redirect 你的新要求** 取消并按新要求重来（会话上下文保留）。');
       return;
     }
-    cancelRun(message.chat_id);
+    cancelRun(sessionKey);
   }
   if (text.startsWith('/redirect')) {
     const extra = text.replace(/^\/redirect\s*/, '').trim();
@@ -289,7 +293,7 @@ async function handleMessage(data) {
       await reply(message.message_id, '用法：/redirect 你的新要求');
       return;
     }
-    cancelRun(message.chat_id);
+    cancelRun(sessionKey);
     prompt = extra; // 会话通过 --resume 保留，直接以新要求继续
   }
 
@@ -303,13 +307,12 @@ async function handleMessage(data) {
     return;
   }
 
-  enqueue(message.chat_id, async () => {
+  enqueue(sessionKey, async () => {
     console.log(`[msg] ${isOwner ? 'owner' : senderOpenId} @ ${message.chat_type} [${message.message_type}]: ${text.slice(0, 80)}`);
     await react(message.message_id, 'OnIt');
     const progress = createProgressChannel(client, message.message_id);
     try {
-      let answer = await runCodex(
-        message.chat_id,
+      let answer = await runCodex(sessionKey,
         prompt,
         isOwner,
         built.attachments ?? [],
@@ -319,8 +322,7 @@ async function handleMessage(data) {
       );
       if (isApprovalDeferral(answer)) {
         console.warn('[approval-deferral] 自动隐藏审批请求并改道重试');
-        answer = await runCodex(
-          message.chat_id,
+        answer = await runCodex(sessionKey,
           buildApprovalRecoveryPrompt(prompt),
           isOwner,
           built.attachments ?? []
@@ -332,9 +334,8 @@ async function handleMessage(data) {
       }
       if (isClaudeRuntimeLeak(answer)) {
         console.warn('[runtime-identity] 隐藏 Claude 身份串线回复，重置会话并用 Codex 重试');
-        resetSession(message.chat_id);
-        answer = await runCodex(
-          message.chat_id,
+        resetSession(sessionKey);
+        answer = await runCodex(sessionKey,
           buildRuntimeIdentityRecoveryPrompt(prompt),
           isOwner,
           built.attachments ?? []
@@ -456,6 +457,14 @@ startScheduler({
     }
   },
 });
+
+// 桥接实际会调用哪个 codex——本机可能装了多份，版本不同会让模型请求被服务端拒绝，
+// 而桥接自身看着一切正常
+{
+  const cli = checkCliEnvironment();
+  console.log(`[config] codex CLI：${cli.bin} (${cli.version ?? '版本未知'})`);
+  if (cli.problem) console.error(`[config] ⚠️ ${cli.problem}`);
+}
 
 console.log('启动飞书长连接…');
 wsClient.start({ eventDispatcher });
