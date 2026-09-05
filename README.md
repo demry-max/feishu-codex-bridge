@@ -1,6 +1,6 @@
 # feishu-codex-bridge
 
-[![version](https://img.shields.io/badge/version-1.4.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![version](https://img.shields.io/badge/version-2.0.0-blue)](CHANGELOG.md) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **中文** | [English](README.en.md)
 
@@ -71,6 +71,8 @@ AUTO_REDIRECT_WHEN_BUSY=true
 桥接默认使用 `CODEX_APPROVAL_POLICY=never`，避免无头任务等待无法完成的交互式审批；owner 同时设置 `CODEX_IGNORE_EXEC_RULES=true`，让 `unzip`、文档解析等命令在 `workspace-write` 沙箱内直接执行。沙箱仍然生效，并未使用危险的 `--yolo`。
 
 DOCX 文件会先由 Node.js 桥接层安全抽取正文，再交给 Codex 分析，因此不会依赖模型临时调用 `python3`、`unzip` 或要求用户批准命令。如果模型仍返回审批话术或错误引用 `~/.claude/settings.json`，桥接会隐藏该回复并自动改用安全方案重试一次。
+
+桥接会在每次调用中明确锁定 Codex 运行时；若回复错误声称 Claude 登录过期或要求运行 `claude /login`，该回复会被隐藏，旧 thread 会被重置，并由 Codex 在新会话中自动重试。若本机同时保留旧 Claude bridge，请确认飞书里选择的是正确机器人，或停止旧服务，避免两个同名机器人混淆。
 
 长任务不会因总运行超过 300 秒就失败。`CODEX_IDLE_TIMEOUT_MS` 只在 Codex 持续无任何输出时触发；`CODEX_MAX_RUNTIME_MS` 是防止失控任务的最终上限。旧的 `CODEX_TIMEOUT_MS` 仍可作为无活动超时兼容项。
 

@@ -12,6 +12,12 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+// MCP 由 claude 以工作区为 cwd 启动，附件落在工作区内模型才能 Read 到
+const WORKSPACE = process.env.WORKSPACE_DIR || process.cwd();
 
 const APP_ID = process.env.FEISHU_APP_ID;
 const APP_SECRET = process.env.FEISHU_APP_SECRET;
@@ -258,6 +264,96 @@ server.tool(
         data: { valueRange: { range, values } },
       });
       return ok({ updated: res?.data?.updatedCells ?? res?.updatedCells ?? null, range });
+    } catch (e) {
+      return fail(e);
+    }
+  }
+);
+
+// ---------- 邮件附件 ----------
+// 为什么需要这个工具：lark-cli 能列出附件元数据、也能换到 download_url，
+// 但机器人没有通用 Bash / curl，拿到 URL 也落不了地；WebFetch 又只把网页转成文本，
+// 对 PDF/docx 这类二进制没用。于是「能看见附件名字，却永远读不到内容」。
+// 这里把「取链接 → 下载到工作区」补上，模型随后用 Read 读本地文件即可。
+//
+// 认证走 lark-cli 的**用户身份**：邮件在个人邮箱里，应用的租户凭据读不到。
+server.tool(
+  'mail_attachment_download',
+  '把飞书邮件的附件下载到工作区，返回可直接 Read 的本地路径。' +
+    '先用 lark-cli mail +message 拿到 message_id 与附件 id，再调用本工具。',
+  {
+    message_id: z.string().describe('邮件的 message_id'),
+    attachment_ids: z.array(z.string()).describe('附件 id 列表（来自 mail +message 的 attachments[].id）'),
+    filenames: z
+      .record(z.string())
+      .optional()
+      .describe('可选：{附件id: 文件名}，取自 attachments[].filename。不传则从响应头推断，推断不出会丢扩展名'),
+    user_mailbox_id: z.string().optional().describe('邮箱地址，默认 me（当前用户）'),
+  },
+  async ({ message_id, attachment_ids, filenames, user_mailbox_id }) => {
+    const names = filenames ?? {};
+    try {
+      const mailbox = user_mailbox_id || 'me';
+      // 1) 用 lark-cli（用户身份）换取下载链接
+      const args = [
+        'mail', 'user_mailbox.message.attachments', 'download_url',
+        '--user-mailbox-id', mailbox,
+        '--message-id', message_id,
+        '--format', 'json',
+      ];
+      for (const id of attachment_ids) args.push('--attachment-ids', id);
+      const rr = spawnSync('lark-cli', args, { encoding: 'utf8', env: process.env, timeout: 60_000 });
+      if (rr.error) throw new Error(`调用 lark-cli 失败：${rr.error.message}`);
+      if (rr.status !== 0) throw new Error(`lark-cli 返回 ${rr.status}：${String(rr.stderr || rr.stdout).slice(0, 300)}`);
+
+      let payload;
+      try {
+        payload = JSON.parse(rr.stdout);
+      } catch {
+        throw new Error(`无法解析 lark-cli 输出：${String(rr.stdout).slice(0, 200)}`);
+      }
+      if (payload?.ok === false) {
+        throw new Error(`lark-cli 返回错误：${JSON.stringify(payload.error ?? payload).slice(0, 300)}`);
+      }
+      const list =
+        payload?.data?.download_urls ?? payload?.download_urls ?? payload?.data?.items ?? [];
+      if (!Array.isArray(list) || !list.length) {
+        throw new Error(`未取到下载链接（返回：${JSON.stringify(payload).slice(0, 300)}）`);
+      }
+
+      // 2) 逐个下载到工作区的 incoming/mail-<message_id>/
+      const destDir = path.join(WORKSPACE, 'incoming', `mail-${message_id.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 60)}`);
+      fs.mkdirSync(destDir, { recursive: true });
+      const saved = [];
+      for (const it of list) {
+        const url = it?.download_url ?? it?.url;
+        if (!url) continue;
+        const res = await fetch(url);
+        if (!res.ok) {
+          saved.push({ attachment_id: it?.attachment_id, error: `下载失败 HTTP ${res.status}` });
+          continue;
+        }
+        // 文件名不在 download_url 的返回里——它在邮件详情的 attachments[].filename。
+        // 调用方通常已经读过邮件详情，所以优先用传进来的 names；
+        // 其次从 Content-Disposition 解码（飞书会给 UTF-8 编码的原名）；
+        // 最后才退到 attachment_id——但那样会丢扩展名，Read 认不出类型。
+        const fromCaller = names?.[it?.attachment_id];
+        const cd = res.headers.get('content-disposition') ?? '';
+        const star = cd.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+        const plain = cd.match(/filename="?([^";]+)"?/i)?.[1];
+        const fromHeader = star ? decodeURIComponent(star) : plain ? decodeURIComponent(plain) : null;
+        const rawName = fromCaller || fromHeader || `${it?.attachment_id ?? `attachment-${saved.length + 1}`}.bin`;
+        const name = String(rawName).replace(/[\/\\:*?"<>|\r\n]/g, '_').slice(0, 120);
+        const buf = Buffer.from(await res.arrayBuffer());
+        const dest = path.join(destDir, name);
+        fs.writeFileSync(dest, buf);
+        saved.push({ name, path: `./${path.relative(WORKSPACE, dest)}`, bytes: buf.length });
+      }
+      if (!saved.length) throw new Error('返回的链接里没有可下载项');
+      return ok({
+        saved,
+        hint: '用 Read 工具读上面的 path 即可查看内容（PDF/图片可直接读）。',
+      });
     } catch (e) {
       return fail(e);
     }

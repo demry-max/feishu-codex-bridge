@@ -16,7 +16,7 @@ const SECRET_PATTERNS = [
   [/\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b/g, '172.x.x.x'],
 ];
 // 运行时凭据（.env 里的真实值）也一并抹掉
-const runtimeSecrets = [process.env.FEISHU_APP_SECRET, process.env.OPENAI_API_KEY]
+const runtimeSecrets = [process.env.FEISHU_APP_SECRET, process.env.CLAUDE_CODE_OAUTH_TOKEN]
   .filter((v) => v && v.length >= 12);
 
 export function redact(text) {
@@ -35,18 +35,51 @@ const card = (text) => ({
  * 进度会话：首条进度发一张卡片，后续进度**原地更新同一张卡片**（不再刷屏）。
  * 返回 { update, finish }：update 推进度，finish 收尾（把卡片改成折叠态）。
  */
+const PROGRESS_MIN_INTERVAL_MS = Number(process.env.PROGRESS_MIN_INTERVAL_MS ?? 3000);
+const PROGRESS_MAX_LINES = 12; // 只留最近若干步，避免 payload 随步数线性膨胀
+
 export function createProgressChannel(client, messageId) {
   let cardMessageId = null;
+  let lastSentAt = 0;
+  let pendingTimer = null;
+  let closed = false;   // 收尾/取消后不得再推进度
+  let inflight = null;  // 在途请求：慢网络下防止重复建卡
   const lines = [];
 
+  // 节流：长任务里每条中间消息都发一次 API 既费配额又慢，
+  // 3 秒内的连续进度合并成一次，最后一条用 trailing 定时器补发，保证不丢最新状态
   const update = async (text) => {
+    if (closed) return; // 任务已取消或已收尾
     lines.push(text);
+    const now = Date.now();
+    const wait = PROGRESS_MIN_INTERVAL_MS - (now - lastSentAt);
+    if (wait > 0) {
+      if (pendingTimer) clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => {
+        pendingTimer = null;
+        if (!closed) flush().catch(() => {});
+      }, wait);
+      return;
+    }
+    await flush();
+  };
+
+  const flush = async () => {
+    if (closed) return;
+    lastSentAt = Date.now();
+    const shown = lines.slice(-PROGRESS_MAX_LINES);
+    const omitted = lines.length - shown.length;
     const body = [
       '🔄 **处理中**',
       '',
-      ...lines.map((l, i) => `${i === lines.length - 1 ? '🔄' : '✅'} ${l}`),
+      ...(omitted > 0 ? [`…（前 ${omitted} 步已省略）`] : []),
+      ...shown.map((l, i) => `${i === shown.length - 1 ? '🔄' : '✅'} ${l}`),
     ].join('\n');
-    try {
+    // 真串行链：把每次发送挂到上一次之后。
+    // 早先写法是「await 当前 inflight 的快照」，三个并发 flush 里第三个会与第二个
+    // 同时看到 inflight 为空而并行跑，仍然重复建卡。
+    const send = (inflight ?? Promise.resolve()).then(async () => {
+      if (closed) return;
       if (!cardMessageId) {
         const res = await client.im.v1.message.reply({
           path: { message_id: messageId },
@@ -59,18 +92,40 @@ export function createProgressChannel(client, messageId) {
           data: { content: JSON.stringify(card(body)) },
         });
       }
+    });
+    inflight = send.catch(() => {}); // 链上永远是已消化异常的 promise，避免未处理拒绝
+    try {
+      await send;
     } catch (e) {
       console.error('[progress]', e?.message ?? e);
     }
   };
 
-  // 收尾：把进度卡片改成一行折叠说明，正式答案另发
-  const finish = async () => {
+  // 收尾：把进度卡片改成折叠说明。取消/失败也必须调用，
+  // 否则卡片会永远停在「🔄 处理中」，用户以为还在跑。
+  const finish = async (status = 'done') => {
+    if (closed) return;
+    closed = true;
+    if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+    if (inflight) await inflight.catch(() => {}); // 等在途请求落地，拿到 cardMessageId
     if (!cardMessageId || !lines.length) return;
+    const head = status === 'cancelled'
+      ? `🛑 **已取消**（进行到第 ${lines.length} 步）`
+      : status === 'failed'
+        ? `⚠️ **已中止**（进行到第 ${lines.length} 步）`
+        : `✅ **已完成**（${lines.length} 步）`;
+    const mark = status === 'done' ? '✅' : '·';
     try {
+      const shown = lines.slice(-PROGRESS_MAX_LINES);
+      const omitted = lines.length - shown.length;
       await client.im.v1.message.patch({
         path: { message_id: cardMessageId },
-        data: { content: JSON.stringify(card([`✅ **已完成**（${lines.length} 步）`, '', ...lines.map((l) => `✅ ${l}`)].join('\n'))) },
+        data: { content: JSON.stringify(card([
+          head,
+          '',
+          ...(omitted > 0 ? [`…（前 ${omitted} 步已省略）`] : []),
+          ...shown.map((l) => `${mark} ${l}`),
+        ].join('\n'))) },
       });
     } catch (e) {
       console.error('[progress-finish]', e?.message ?? e);
@@ -83,8 +138,36 @@ export function createProgressChannel(client, messageId) {
 const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 
 /**
- * 回传附件：机器人把要发的文件写进 workspace/outbox/，本函数发送后清空。
+ * 一次性迁移：v1.x 用 outbox 根目录做回传，升级到按会话隔离后，
+ * 根目录里的残留文件既不会被发送也不会被清理，会一直躺在那儿。
+ * 归拢到 _legacy/ 并告知调用方，让 owner 知道有东西需要处理。
+ */
+export function migrateLegacyOutbox(outboxRoot) {
+  if (!fs.existsSync(outboxRoot)) return 0;
+  let moved = 0;
+  try {
+    const legacy = path.join(outboxRoot, '_legacy');
+    for (const name of fs.readdirSync(outboxRoot)) {
+      const p = path.join(outboxRoot, name);
+      if (name.startsWith('.') || name === '_legacy') continue;
+      if (!fs.statSync(p).isFile()) continue; // 会话子目录不动
+      fs.mkdirSync(legacy, { recursive: true });
+      fs.renameSync(p, path.join(legacy, name));
+      moved++;
+    }
+  } catch (e) {
+    console.error('[outbox-migrate]', e?.message ?? e);
+  }
+  if (moved) console.log(`[outbox] 已把 ${moved} 个 v1.x 遗留文件移到 outbox/_legacy/（不会自动发送）`);
+  return moved;
+}
+
+/**
+ * 回传附件：机器人把要发的文件写进本轮专属的 outbox 子目录，本函数发送后清空。
  * 图片走图片消息（飞书直接预览），其余走文件消息。
+ *
+ * 必须按会话隔离：共享一个 outbox 时，定时任务生成的文件会滞留到下一条**任意**消息
+ * 被顺手发走——周报图表可能就这么发给了随口问天气的同事，且发完即删无法追回。
  */
 export async function flushOutbox(client, outboxDir, sendRaw) {
   if (!fs.existsSync(outboxDir)) return 0;

@@ -1,5 +1,17 @@
 # 故障排查 / Troubleshooting
 
+## Codex 机器人却提示运行 `claude /login`
+
+当前桥接只启动 Codex CLI，不会调用 Claude。最常见原因是本机仍运行旧的 `feishu-claude-bridge`，且两个飞书机器人使用了相同显示名称；消息实际发给了旧 Claude 机器人。请在飞书开放平台为两个机器人设置不同名称，或停止不再使用的旧 Claude 后台服务。
+
+新版还会在每次 Codex 调用中注入明确的运行时身份约束。若 Codex 回复本身错误声称 Claude 登录过期或要求运行 `claude /login`，桥接不会把该回复发到飞书，而是重置旧 thread 并通过 Codex 新会话自动重试。真正的 Codex 登录失效只会提示运行 `codex login`。
+
+## Codex bot asks you to run `claude /login`
+
+This bridge only launches Codex CLI. Usually, a legacy `feishu-claude-bridge` is still running and both Feishu bots have the same display name, so the message was sent to the old Claude bot. Give the bots distinct names in the Feishu developer console or stop the unused legacy service.
+
+The current bridge also pins the runtime identity in every prompt. If a Codex response itself incorrectly reports an expired Claude login or asks for `claude /login`, the response is suppressed, the stale thread is reset, and the task is retried through Codex in a fresh session. Real Codex authentication failures point to `codex login`.
+
 ## 机器人能列出 memory 文件，但新会话不一定使用记忆
 
 上游 Claude 版通过 `CLAUDE.md` 的 `@memory/MEMORY.md` 自动导入索引；Codex 的 `AGENTS.md` 只保证加载指令文件，不能把 Claude 的 `@import` 当成等价机制。桥接现在会在每次 owner 调用前直接读取 `workspace/memory/MEMORY.md` 并注入提示词，再由 Codex 按任务需要读取链接的明细文件。`/status` 会显示已自动加载的索引条数。
