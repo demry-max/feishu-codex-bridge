@@ -82,12 +82,15 @@ ensureGuestWorkspace();
 function ensureMemoryIndex() {
   try {
     const dir = path.join(WORKSPACE_DIR, 'memory');
-    const live = path.join(dir, 'MEMORY.md');
-    const tpl = path.join(dir, 'MEMORY.md.template');
-    if (!fs.existsSync(live) && fs.existsSync(tpl)) {
-      fs.mkdirSync(dir, { recursive: true });
-      fs.copyFileSync(tpl, live);
-      console.log('[memory] 已从模板创建 memory/MEMORY.md');
+    fs.mkdirSync(path.join(dir, 'journal'), { recursive: true });
+    // 画像层与事实层索引都只在仓库里存模板，运行时文件不入库
+    for (const name of ['MEMORY.md', 'USER.md']) {
+      const live = path.join(dir, name);
+      const tpl = path.join(dir, `${name}.template`);
+      if (!fs.existsSync(live) && fs.existsSync(tpl)) {
+        fs.copyFileSync(tpl, live);
+        console.log(`[memory] 已从模板创建 memory/${name}`);
+      }
     }
   } catch (e) {
     console.error('[memory-index]', e?.message ?? e);
@@ -349,14 +352,27 @@ const AUTONOMOUS_RUN_INSTRUCTIONS = [
   '只向用户返回最终结果；除非确实需要用户提供业务信息，否则不要把技术排障步骤交给用户。',
 ].join('\n');
 
+/**
+ * 加载注入上下文的记忆：画像层（USER.md）+ 事实层索引（MEMORY.md）。
+ *
+ * 三层结构里只有这两层随每次调用注入——流水层（journal/）体量大且时效性强，
+ * 交给关键词召回按需提示，不占固定上下文。
+ * Codex 不像 Claude Code 有 @import，所以由桥接显式拼装。
+ */
 export function loadMemoryIndex(workspaceDir = WORKSPACE_DIR) {
-  try {
-    const indexPath = path.join(workspaceDir, 'memory', 'MEMORY.md');
-    const index = fs.readFileSync(indexPath, 'utf8').replace(/\0/g, '').trim();
-    return index.slice(0, MEMORY_INDEX_MAX_CHARS);
-  } catch {
-    return '';
-  }
+  const readOr = (...seg) => {
+    try {
+      return fs.readFileSync(path.join(workspaceDir, ...seg), 'utf8').replace(/\0/g, '').trim();
+    } catch {
+      return '';
+    }
+  };
+  const profile = readOr('memory', 'USER.md');
+  const index = readOr('memory', 'MEMORY.md');
+  const parts = [];
+  if (profile) parts.push(`## 用户画像（memory/USER.md）\n${profile}`);
+  if (index) parts.push(`## 记忆索引（memory/MEMORY.md）\n${index}`);
+  return parts.join('\n\n').slice(0, MEMORY_INDEX_MAX_CHARS);
 }
 
 export function buildAutonomousPrompt(prompt, { memoryIndex = '' } = {}) {

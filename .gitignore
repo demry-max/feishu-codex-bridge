@@ -6,6 +6,7 @@ workspace/*
 !workspace/memory/
 workspace/memory/*
 !workspace/memory/MEMORY.md.template
+!workspace/memory/USER.md.template
 !workspace/skills/
 workspace/skills/*
 !workspace/skills/README.md
